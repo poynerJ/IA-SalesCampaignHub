@@ -334,11 +334,10 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     token: localStorage.getItem('scg_token') || null,
     role: localStorage.getItem('scg_role') || null,
     reference: null,
-    markets: [],
-    quarters: [],
-    marketId: null,
-    quarterId: null,
-    quarter: null, // full row for the selected quarter (status, feedback, etc.)
+    proposalsList: [], // [{marketCode, quarterSlug}] — every saved proposal, from GitHub
+    marketCode: null,
+    quarterSlug: null,
+    proposal: null, // the currently loaded, fully-enriched proposal document
     view: 'programmes',
   };
 
@@ -349,10 +348,10 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     'proposal-summary': { n: 4, title: 'Proposal Summary', subtitle: 'All programmes by channel type and programme type — for approval presentation.' },
     'campaign-summary': { n: 5, title: 'Campaign Level Summary', subtitle: 'Row-by-row breakdown of every generated campaign code, base and stacked.' },
     signoff: { n: 6, title: 'QCP Sign-Off Summary', subtitle: 'Budget vs proposal, channel investment, and approval status.' },
-    admin: { n: null, title: 'Proposal Tracker', subtitle: 'Every region\u2019s proposal, this quarter and last \u2014 approve, reject, or send back for changes.' },
+    admin: { n: null, title: 'Proposal Tracker', subtitle: 'Every region\u2019s proposal, stored in GitHub \u2014 approve, reject, or send back for changes.' },
   };
 
-  async function api(path, opts = {}) {
+  async function api(path, opts = {}, _isRetry = false) {
     let res;
     try {
       res = await fetch('/api' + path, {
@@ -366,9 +365,6 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       signOut();
       throw new Error('Session expired \u2014 please sign in again.');
     }
-    // Read as text first: an empty or non-JSON body (cold-start hiccup, proxy
-    // timeout, a stray HTML error page) must never crash the caller with
-    // "Unexpected end of JSON input" — fall back to a readable message instead.
     const raw = await res.text().catch(() => '');
     let body = null;
     if (raw) {
@@ -377,7 +373,11 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     if (!res.ok) {
       throw new Error((body && body.error) || `Request failed (${res.status}). ${!raw ? 'The server sent an empty response \u2014 please try again.' : ''}`);
     }
-    if (res.status === 204 || !raw) return null;
+    if (res.status === 204) return null;
+    if (!raw) {
+      if (!_isRetry) return api(path, opts, true);
+      throw new Error(`The server returned an empty response (status ${res.status}), even after retrying. Please try again in a moment.`);
+    }
     return body;
   }
 
@@ -426,7 +426,6 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     boot();
   }
 
-  // ---------------- Boot / routing between login and app ----------------
   async function boot() {
     const root = document.getElementById('root');
     root.innerHTML = '';
@@ -438,7 +437,6 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
   }
 
   function renderLogin() {
-    let errorMsg = '';
     const wrap = el('div', { class: 'login-screen' });
     const card = el('div', { class: 'login-card' });
     card.appendChild(el('img', { class: 'logo-mark-lg', src: LOGO_SRC, alt: 'INEOS Grenadier' }));
@@ -456,6 +454,9 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       e.preventDefault();
       try {
         const result = await api('/auth/login', { method: 'POST', body: JSON.stringify({ password: input.value }) });
+        if (!result || !result.token) {
+          throw new Error('Sign-in did not return a valid session \u2014 please try again.');
+        }
         localStorage.setItem('scg_token', result.token);
         localStorage.setItem('scg_role', result.role);
         state.token = result.token;
@@ -467,30 +468,42 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       }
     });
     card.appendChild(form);
-    card.appendChild(el('p', { class: 'login-footer', text: 'Data stored centrally per market and quarter.' }));
+    card.appendChild(el('p', { class: 'login-footer', text: 'Every proposal is a JSON file in GitHub \u2014 saved, loaded, and deleted as real commits.' }));
     wrap.appendChild(card);
     return wrap;
   }
 
-  async function loadMarkets() {
-    state.markets = await api('/markets');
-    if (!state.marketId || !state.markets.find((m) => String(m.id) === String(state.marketId))) {
-      state.marketId = state.markets[0] ? state.markets[0].id : null;
+  // ---------------- Proposal list + current selection ----------------
+  async function loadProposalsList() {
+    state.proposalsList = await api('/proposals');
+    const markets = [...new Set(state.proposalsList.map((p) => p.marketCode))];
+    if (!state.marketCode || !markets.includes(state.marketCode)) {
+      state.marketCode = markets[0] || null;
     }
-    await loadQuarters();
+    syncQuarterSelection();
+    await loadCurrentProposal();
   }
 
-  async function loadQuarters() {
-    if (!state.marketId) { state.quarters = []; state.quarterId = null; state.quarter = null; return; }
-    state.quarters = await api(`/markets/${state.marketId}/quarters`);
-    if (!state.quarterId || !state.quarters.find((q) => String(q.id) === String(state.quarterId))) {
-      state.quarterId = state.quarters[0] ? state.quarters[0].id : null;
+  function syncQuarterSelection() {
+    const quarters = state.proposalsList.filter((p) => p.marketCode === state.marketCode).map((p) => p.quarterSlug);
+    if (!state.quarterSlug || !quarters.includes(state.quarterSlug)) {
+      state.quarterSlug = quarters[0] || null;
     }
-    state.quarter = state.quarters.find((q) => String(q.id) === String(state.quarterId)) || null;
   }
 
-  async function refreshCurrentQuarter() {
-    await loadQuarters();
+  async function loadCurrentProposal() {
+    if (!state.marketCode || !state.quarterSlug) { state.proposal = null; return; }
+    try {
+      state.proposal = await api(`/proposals/${state.marketCode}/${state.quarterSlug}`);
+    } catch (e) {
+      state.proposal = null;
+      toast(e.message, true);
+    }
+  }
+
+  function marketDisplayName(code) {
+    const ref = state.reference.markets.find((m) => m.code === code);
+    return ref ? ref.market_name : code;
   }
 
   async function renderAppShell() {
@@ -501,7 +514,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       wrap.appendChild(el('div', { class: 'api-error-banner', html: `<strong>Can't reach the server.</strong> ${e.message}` }));
       return wrap;
     }
-    await loadMarkets();
+    await loadProposalsList();
 
     const shell = el('div', { class: 'app-shell' });
     shell.appendChild(renderSidebar());
@@ -520,39 +533,51 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     ]);
     sidebar.appendChild(header);
 
+    if (!state.reference.githubConfigured) {
+      sidebar.appendChild(el('div', { class: 'status-banner status-rejected' }, [
+        el('span', { class: 'dot' }), el('span', { text: 'GitHub storage not configured' }),
+      ]));
+    }
+
+    const marketsWithData = [...new Set(state.proposalsList.map((p) => p.marketCode))];
     const picker = el('div', { class: 'workspace-picker' });
     picker.appendChild(el('label', { text: 'Market' }));
-    const marketSelect = el('select', {}, state.markets.length
-      ? state.markets.map((m) => el('option', { value: m.id, text: `${m.display_name} (${m.market_code})`, selected: String(m.id) === String(state.marketId) ? 'true' : undefined }))
-      : [el('option', { value: '', text: 'No markets yet' })]);
+    const marketSelect = el('select', {}, marketsWithData.length
+      ? marketsWithData.map((code) => el('option', { value: code, text: `${marketDisplayName(code)} (${code})`, selected: code === state.marketCode ? 'true' : undefined }))
+      : [el('option', { value: '', text: 'No proposals yet' })]);
     marketSelect.addEventListener('change', async (e) => {
-      state.marketId = e.target.value || null;
-      state.quarterId = null;
-      await loadQuarters();
+      state.marketCode = e.target.value || null;
+      state.quarterSlug = null;
+      syncQuarterSelection();
+      await loadCurrentProposal();
       rerenderShell();
     });
     picker.appendChild(marketSelect);
-    picker.appendChild(el('button', { class: 'link-btn', type: 'button', text: '+ Add market', onclick: onAddMarket }));
 
     picker.appendChild(el('label', { text: 'Quarter' }));
-    const quarterSelect = el('select', {}, state.quarters.length
-      ? state.quarters.map((q) => el('option', { value: q.id, text: q.label, selected: String(q.id) === String(state.quarterId) ? 'true' : undefined }))
-      : [el('option', { value: '', text: 'No quarters yet' })]);
+    const quartersForMarket = state.proposalsList.filter((p) => p.marketCode === state.marketCode).map((p) => p.quarterSlug);
+    const quarterSelect = el('select', {}, quartersForMarket.length
+      ? quartersForMarket.map((slug) => el('option', { value: slug, text: slug.replace(/-/g, ' '), selected: slug === state.quarterSlug ? 'true' : undefined }))
+      : [el('option', { value: '', text: '\u2014' })]);
     quarterSelect.addEventListener('change', async (e) => {
-      state.quarterId = e.target.value || null;
-      state.quarter = state.quarters.find((q) => String(q.id) === String(state.quarterId)) || null;
+      state.quarterSlug = e.target.value || null;
+      await loadCurrentProposal();
       rerenderShell();
     });
     picker.appendChild(quarterSelect);
-    picker.appendChild(el('button', { class: 'link-btn', type: 'button', text: '+ Add quarter', onclick: onAddQuarter }));
+
+    picker.appendChild(el('button', { class: 'link-btn', type: 'button', text: '+ New proposal', onclick: onNewProposal }));
+    if (state.proposal) {
+      picker.appendChild(el('button', { class: 'link-btn', type: 'button', style: 'color:var(--red-dark)', text: '\u2715 Delete this proposal', onclick: onDeleteProposal }));
+    }
     sidebar.appendChild(picker);
 
-    if (state.quarter) {
-      sidebar.appendChild(statusBanner(state.quarter.status));
+    if (state.proposal) {
+      sidebar.appendChild(statusBanner(state.proposal.status));
     }
 
     const nav = el('nav', { class: 'main-nav' });
-    const locked = !state.quarter || state.quarter.status !== 'approved';
+    const locked = !state.proposal || state.proposal.status !== 'approved';
 
     nav.appendChild(el('div', { class: 'nav-group-label', text: 'Proposal' }));
     nav.appendChild(navItem('programmes', '1. Programme Input'));
@@ -581,12 +606,11 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
   }
 
   function navItem(view, label, isLocked) {
-    const btn = el('button', {
+    return el('button', {
       class: 'nav-item' + (state.view === view ? ' active' : ''),
       type: 'button',
       onclick: () => { state.view = view; rerenderShell(); },
     }, [el('span', { text: label }), isLocked ? el('span', { class: 'lock-icon', text: '\u{1F512}' }) : null]);
-    return btn;
   }
 
   function statusBanner(status) {
@@ -600,6 +624,44 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     root.appendChild(await renderAppShell());
   }
 
+  // Re-fetches the current proposal and re-renders the active view in place
+  // (used after every mutation, since every mutation already returns the
+  // fresh document too — but re-fetching keeps this one code path simple).
+  async function refreshAndRerender() {
+    await loadCurrentProposal();
+    renderContent(document.getElementById('content-root'));
+  }
+
+  async function onNewProposal() {
+    const codes = state.reference.markets.map((m) => `${m.code} \u2014 ${m.market_name}`).join('\n');
+    const code = prompt(`ISO market code for the new proposal (e.g. GB, IE, US):\n\n${codes}`);
+    if (!code) return;
+    const match = state.reference.markets.find((m) => m.code.toUpperCase() === code.trim().toUpperCase());
+    if (!match) return toast('Unrecognised market code', true);
+    const label = prompt('Quarter label, e.g. "Q3 2026"');
+    if (!label) return;
+    try {
+      const created = await api('/proposals', { method: 'POST', body: JSON.stringify({ market_code: match.code, quarter_label: label }) });
+      state.marketCode = created.marketCode;
+      state.quarterSlug = created.quarterSlug;
+      await loadProposalsList();
+      rerenderShell();
+      toast(`Proposal created for ${match.market_name} \u2014 saved to GitHub`);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function onDeleteProposal() {
+    if (!state.proposal) return;
+    if (!confirm(`Delete the ${state.proposal.display_name} \u2014 ${state.proposal.quarter_label} proposal? This removes the file from GitHub and can't be undone.`)) return;
+    try {
+      await api(`/proposals/${state.marketCode}/${state.quarterSlug}`, { method: 'DELETE' });
+      state.marketCode = null; state.quarterSlug = null; state.proposal = null;
+      await loadProposalsList();
+      rerenderShell();
+      toast('Proposal deleted');
+    } catch (e) { toast(e.message, true); }
+  }
+
   function renderContent(content) {
     content.innerHTML = '';
     const meta = STAGES[state.view];
@@ -611,8 +673,8 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     header.appendChild(left);
     content.appendChild(header);
 
-    if (!state.quarterId && state.view !== 'admin') {
-      content.appendChild(el('div', { class: 'empty-state', text: 'Pick or create a market and quarter on the left to get started.' }));
+    if (!state.proposal && state.view !== 'admin') {
+      content.appendChild(el('div', { class: 'empty-state', text: 'Pick an existing proposal on the left, or click "+ New proposal" to start one.' }));
       return;
     }
 
@@ -642,46 +704,20 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     return div;
   }
 
-  async function onAddMarket() {
-    const codes = state.reference.markets.map((m) => `${m.code} \u2014 ${m.market_name}`).join('\n');
-    const code = prompt(`Enter the ISO market code to add (e.g. GB, IE, US).\n\nAvailable:\n${codes}`);
-    if (!code) return;
-    const match = state.reference.markets.find((m) => m.code.toUpperCase() === code.trim().toUpperCase());
-    if (!match) return toast('Unrecognised market code', true);
-    try {
-      const created = await api('/markets', { method: 'POST', body: JSON.stringify({ market_code: match.code, display_name: match.market_name }) });
-      state.marketId = created.id;
-      await loadMarkets();
-      rerenderShell();
-      toast(`Added ${match.market_name}`);
-    } catch (e) { toast(e.message, true); }
-  }
-
-  async function onAddQuarter() {
-    if (!state.marketId) return toast('Add a market first', true);
-    const label = prompt('Quarter label, e.g. "Q3 2026"');
-    if (!label) return;
-    try {
-      const created = await api(`/markets/${state.marketId}/quarters`, { method: 'POST', body: JSON.stringify({ label }) });
-      state.quarterId = created.id;
-      await loadQuarters();
-      rerenderShell();
-      toast(`Added ${label}`);
-    } catch (e) { toast(e.message, true); }
-  }
-
   // ---------------- Stage 1: Programme Input ----------------
   async function renderProgrammes(root) {
-    const editable = state.quarter && ['draft', 'rejected', 'under_review'].includes(state.quarter.status) || state.role === 'admin';
-    if (state.quarter && state.quarter.status === 'rejected' && state.quarter.feedback) {
-      root.appendChild(el('div', { class: 'feedback-box rejected' }, [el('strong', { text: 'Rejected \u2014 admin feedback' }), el('span', { text: state.quarter.feedback })]));
-    } else if (state.quarter && state.quarter.status === 'under_review' && state.quarter.feedback) {
-      root.appendChild(el('div', { class: 'feedback-box under_review' }, [el('strong', { text: 'Sent back for changes' }), el('span', { text: state.quarter.feedback })]));
+    const p = state.proposal;
+    const editable = ['draft', 'rejected', 'under_review'].includes(p.status) || state.role === 'admin';
+
+    if (p.status === 'rejected' && p.feedback) {
+      root.appendChild(el('div', { class: 'feedback-box rejected' }, [el('strong', { text: 'Rejected \u2014 admin feedback' }), el('span', { text: p.feedback })]));
+    } else if (p.status === 'under_review' && p.feedback) {
+      root.appendChild(el('div', { class: 'feedback-box under_review' }, [el('strong', { text: 'Sent back for changes' }), el('span', { text: p.feedback })]));
     }
 
     if (!editable) {
       root.appendChild(el('div', { class: 'panel' }, [
-        el('p', { class: 'muted', text: state.quarter.status === 'submitted'
+        el('p', { class: 'muted', text: p.status === 'submitted'
           ? 'This proposal is submitted and awaiting an admin decision \u2014 Programme Input is locked until then.'
           : 'This proposal is approved. Programme Input is now locked so the numbers a decision was made against can\u2019t drift \u2014 packages and campaigns are being built from this data instead.' }),
       ]));
@@ -690,7 +726,6 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     }
     root.appendChild(el('hr', { class: 'section-divider' }));
 
-    const programmes = await api(`/quarters/${state.quarterId}/programmes`);
     const table = el('table', { class: 'data-table' }, [
       el('thead', {}, el('tr', {}, [
         el('th', { text: 'Code' }), el('th', { text: 'Title' }), el('th', { text: 'Type' }),
@@ -699,20 +734,20 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       ])),
     ]);
     const tbody = el('tbody');
-    programmes.forEach((p) => {
+    p.programmes.forEach((prog) => {
       tbody.appendChild(el('tr', {}, [
-        el('td', {}, el('span', { class: 'code-chip', text: p.programme_code })),
-        el('td', { text: p.title }),
-        el('td', { text: p.programme_type }),
-        el('td', {}, alignmentPill(p.budget_alignment)),
-        el('td', { text: p.channel_type }),
-        el('td', {}, p.marketed ? el('span', { class: 'pill marketed' }, [el('span', { class: 'dot' }), el('span', { text: (p.marketing_channels || []).join(', ') || 'Yes' })]) : el('span', { class: 'muted', text: '\u2014' })),
-        el('td', { class: 'num', text: fmtNum(p.activation_volume) }),
-        el('td', { class: 'num', text: fmtMoney(p.local_cost_pu, p.currency) }),
-        el('td', { class: 'num', text: fmtEur(p.total_cost_eur) }),
+        el('td', {}, el('span', { class: 'code-chip', text: prog.programme_code })),
+        el('td', { text: prog.title }),
+        el('td', { text: prog.programme_type }),
+        el('td', {}, alignmentPill(prog.budget_alignment)),
+        el('td', { text: prog.channel_type }),
+        el('td', {}, prog.marketed ? el('span', { class: 'pill marketed' }, [el('span', { class: 'dot' }), el('span', { text: (prog.marketing_channels || []).join(', ') || 'Yes' })]) : el('span', { class: 'muted', text: '\u2014' })),
+        el('td', { class: 'num', text: fmtNum(prog.activation_volume) }),
+        el('td', { class: 'num', text: fmtMoney(prog.local_cost_pu, prog.currency) }),
+        el('td', { class: 'num', text: fmtEur(prog.total_cost_eur) }),
         editable ? el('td', {}, el('button', { class: 'btn danger', text: 'Delete', onclick: async () => {
           if (!confirm('Delete this programme?')) return;
-          try { await api(`/programmes/${p.id}`, { method: 'DELETE' }); renderContent(document.getElementById('content-root')); }
+          try { await api(`/proposals/${state.marketCode}/${state.quarterSlug}/programmes/${prog.id}`, { method: 'DELETE' }); await refreshAndRerender(); toast('Deleted'); }
           catch (e) { toast(e.message, true); }
         } })) : null,
       ]));
@@ -799,7 +834,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
         if (years.length) model_eligibility[g.code] = years;
       });
       try {
-        await api(`/quarters/${state.quarterId}/programmes`, {
+        await api(`/proposals/${state.marketCode}/${state.quarterSlug}/programmes`, {
           method: 'POST',
           body: JSON.stringify({
             title: title.value, programme_type: type.value, currency: currency.value,
@@ -809,8 +844,8 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
             marketed: marketed.checked, marketing_channels: Array.from(selectedChannels),
           }),
         });
-        toast('Programme added');
-        renderContent(document.getElementById('content-root'));
+        toast('Programme added \u2014 saved to GitHub');
+        await refreshAndRerender();
       } catch (err) { toast(err.message, true); }
     });
 
@@ -820,28 +855,22 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
 
   // ---------------- Stage 2: Incentive Packages ----------------
   async function renderPackages(root) {
-    if (!(state.quarter && (state.quarter.status === 'approved' || state.role === 'admin'))) {
+    const p = state.proposal;
+    if (!(p.status === 'approved' || state.role === 'admin')) {
       root.appendChild(lockedState());
       return;
     }
-    const [packages, programmes] = await Promise.all([
-      api(`/quarters/${state.quarterId}/packages`),
-      api(`/quarters/${state.quarterId}/programmes`),
-    ]);
-    const stackableProgrammes = programmes.filter((p) => p.stackable);
+    const stackableProgrammes = p.programmes.filter((pr) => pr.stackable);
 
     const panel = el('div', { class: 'panel' }, [el('div', { class: 'panel-title', text: 'Build an incentive package (up to 5 stackable programmes)' })]);
     if (!stackableProgrammes.length) {
       panel.appendChild(el('p', { class: 'muted', text: 'No stackable programmes yet \u2014 mark a programme as "stackable" in Programme Input first.' }));
     } else {
       const list = el('div', {});
-      const checks = stackableProgrammes.map((p) => {
-        const cb = el('input', { type: 'checkbox', value: p.id });
-        cb.addEventListener('change', () => {
-          const checkedCount = checks ? checks.filter((c) => c.cb.checked).length : 0;
-        });
-        list.appendChild(el('label', { class: 'checkbox-row', style: 'margin-bottom:6px' }, [cb, el('span', { text: `${p.title} (${p.currency} ${fmtNum(p.local_cost_pu)})` })]));
-        return { cb, id: p.id };
+      const checks = stackableProgrammes.map((pr) => {
+        const cb = el('input', { type: 'checkbox', value: pr.id });
+        list.appendChild(el('label', { class: 'checkbox-row', style: 'margin-bottom:6px' }, [cb, el('span', { text: `${pr.title} (${pr.currency} ${fmtNum(pr.local_cost_pu)})` })]));
+        return { cb, id: pr.id };
       });
       panel.appendChild(list);
       const addBtn = el('button', { class: 'btn', text: 'Create package from selected' });
@@ -849,9 +878,9 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
         const ids = checks.filter((c) => c.cb.checked).map((c) => c.id);
         if (ids.length < 2 || ids.length > 5) return toast('Select between 2 and 5 programmes', true);
         try {
-          await api(`/quarters/${state.quarterId}/packages`, { method: 'POST', body: JSON.stringify({ programme_ids: ids }) });
-          toast('Package created');
-          renderContent(document.getElementById('content-root'));
+          await api(`/proposals/${state.marketCode}/${state.quarterSlug}/packages`, { method: 'POST', body: JSON.stringify({ programme_ids: ids }) });
+          toast('Package created \u2014 saved to GitHub');
+          await refreshAndRerender();
         } catch (e) { toast(e.message, true); }
       });
       panel.appendChild(addBtn);
@@ -866,7 +895,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       ])),
     ]);
     const tbody = el('tbody');
-    packages.forEach((pkg) => {
+    p.incentive_packages.forEach((pkg) => {
       tbody.appendChild(el('tr', {}, [
         el('td', { text: pkg.name }),
         el('td', { class: 'num', text: fmtNum(pkg.cor_cost_pu) }),
@@ -874,8 +903,8 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
         el('td', { class: 'num', text: fmtNum(pkg.total_cost_pu) }),
         el('td', {}, el('button', { class: 'btn danger', text: 'Delete', onclick: async () => {
           if (!confirm('Delete this package?')) return;
-          await api(`/packages/${pkg.id}`, { method: 'DELETE' });
-          renderContent(document.getElementById('content-root'));
+          await api(`/proposals/${state.marketCode}/${state.quarterSlug}/packages/${pkg.id}`, { method: 'DELETE' });
+          await refreshAndRerender();
         } })),
       ]));
     });
@@ -885,21 +914,17 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
 
   // ---------------- Stage 3: Sales Campaign Builder ----------------
   async function renderCampaigns(root) {
-    if (!(state.quarter && (state.quarter.status === 'approved' || state.role === 'admin'))) {
+    const p = state.proposal;
+    if (!(p.status === 'approved' || state.role === 'admin')) {
       root.appendChild(lockedState());
       return;
     }
-    const [campaigns, programmes, packages] = await Promise.all([
-      api(`/quarters/${state.quarterId}/campaigns`),
-      api(`/quarters/${state.quarterId}/programmes`),
-      api(`/quarters/${state.quarterId}/packages`),
-    ]);
-    const baseProgrammes = programmes.filter((p) => p.code_required && p.programme_code !== 'No Code Required');
+    const baseProgrammes = p.programmes.filter((pr) => pr.code_required && pr.programme_code !== 'No Code Required');
 
     const panel = el('div', { class: 'panel' }, [el('div', { class: 'panel-title', text: 'Build a sales campaign' })]);
     const form = el('form');
-    const base = el('select', {}, baseProgrammes.map((p) => el('option', { value: p.id, text: `${p.programme_code} \u2014 ${p.title}` })));
-    const pkg = el('select', {}, [el('option', { value: '', text: '(none \u2014 base programme only)' }), ...packages.map((p) => el('option', { value: p.id, text: p.name }))]);
+    const base = el('select', {}, baseProgrammes.map((pr) => el('option', { value: pr.id, text: `${pr.programme_code} \u2014 ${pr.title}` })));
+    const pkg = el('select', {}, [el('option', { value: '', text: '(none \u2014 base programme only)' }), ...p.incentive_packages.map((pk) => el('option', { value: pk.id, text: pk.name }))]);
     const volume = el('input', { type: 'number', step: 'any', placeholder: 'defaults to base programme volume' });
     form.appendChild(el('div', { class: 'form-grid' }, [
       field('Base programme', base),
@@ -911,7 +936,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       e.preventDefault();
       if (!base.value) return toast('Add a code-required programme first', true);
       try {
-        await api(`/quarters/${state.quarterId}/campaigns`, {
+        await api(`/proposals/${state.marketCode}/${state.quarterSlug}/campaigns`, {
           method: 'POST',
           body: JSON.stringify({
             base_programme_id: Number(base.value),
@@ -919,8 +944,8 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
             forecast_volume: volume.value ? Number(volume.value) : null,
           }),
         });
-        toast('Campaign added');
-        renderContent(document.getElementById('content-root'));
+        toast('Campaign added \u2014 saved to GitHub');
+        await refreshAndRerender();
       } catch (err) { toast(err.message, true); }
     });
     panel.appendChild(form);
@@ -934,7 +959,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       ])),
     ]);
     const tbody = el('tbody');
-    campaigns.forEach((c) => {
+    p.sales_campaigns.forEach((c) => {
       tbody.appendChild(el('tr', {}, [
         el('td', {}, el('span', { class: 'code-chip', text: c.campaign_code })),
         el('td', { text: c.campaign_title }),
@@ -944,8 +969,8 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
         el('td', { class: 'num', text: fmtEur(c.total_cost_eur) }),
         el('td', {}, el('button', { class: 'btn danger', text: 'Delete', onclick: async () => {
           if (!confirm('Delete this campaign?')) return;
-          await api(`/campaigns/${c.id}`, { method: 'DELETE' });
-          renderContent(document.getElementById('content-root'));
+          await api(`/proposals/${state.marketCode}/${state.quarterSlug}/campaigns/${c.id}`, { method: 'DELETE' });
+          await refreshAndRerender();
         } })),
       ]));
     });
@@ -955,10 +980,10 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
 
   // ---------------- Stage 4: Proposal Summary ----------------
   async function renderProposalSummary(root) {
-    const summary = await api(`/quarters/${state.quarterId}/summary/programme-level`);
+    const summary = state.proposal.programme_summary;
 
     const exportRow = el('div', { style: 'margin-bottom:18px' });
-    exportRow.appendChild(downloadButton('\u2b07 Download Ingest_Programme_Export.xlsx', `/quarters/${state.quarterId}/exports/programmes`));
+    exportRow.appendChild(downloadButton('\u2b07 Download Ingest_Programme_Export.xlsx', `/proposals/${state.marketCode}/${state.quarterSlug}/exports/programmes`));
     root.appendChild(exportRow);
 
     root.appendChild(el('div', { class: 'stat-row' }, [
@@ -993,10 +1018,10 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
 
   // ---------------- Stage 5: Campaign Level Summary ----------------
   async function renderCampaignSummary(root) {
-    const summary = await api(`/quarters/${state.quarterId}/summary/campaign-level`);
+    const summary = state.proposal.campaign_summary;
 
     const exportRow = el('div', { style: 'margin-bottom:18px' });
-    exportRow.appendChild(downloadButton('\u2b07 Download Ingest_Code_Export.xlsx', `/quarters/${state.quarterId}/exports/codes`));
+    exportRow.appendChild(downloadButton('\u2b07 Download Ingest_Code_Export.xlsx', `/proposals/${state.marketCode}/${state.quarterSlug}/exports/codes`));
     root.appendChild(exportRow);
 
     if (!summary.rows.length) {
@@ -1062,26 +1087,26 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
 
   // ---------------- Stage 6: Budget & QCP Sign-Off Summary ----------------
   async function renderSignoff(root) {
-    const editable = state.quarter && (['draft', 'rejected', 'under_review'].includes(state.quarter.status) || state.role === 'admin');
-    const q = state.quarter;
+    const p = state.proposal;
+    const editable = ['draft', 'rejected', 'under_review'].includes(p.status) || state.role === 'admin';
 
-    if (q.status === 'rejected' && q.feedback) {
-      root.appendChild(el('div', { class: 'feedback-box rejected' }, [el('strong', { text: 'Rejected \u2014 admin feedback' }), el('span', { text: q.feedback })]));
-    } else if (q.status === 'under_review' && q.feedback) {
-      root.appendChild(el('div', { class: 'feedback-box under_review' }, [el('strong', { text: 'Sent back for changes' }), el('span', { text: q.feedback })]));
-    } else if (q.status === 'approved' && q.feedback) {
-      root.appendChild(el('div', { class: 'feedback-box approved' }, [el('strong', { text: 'Approved' }), el('span', { text: q.feedback })]));
+    if (p.status === 'rejected' && p.feedback) {
+      root.appendChild(el('div', { class: 'feedback-box rejected' }, [el('strong', { text: 'Rejected \u2014 admin feedback' }), el('span', { text: p.feedback })]));
+    } else if (p.status === 'under_review' && p.feedback) {
+      root.appendChild(el('div', { class: 'feedback-box under_review' }, [el('strong', { text: 'Sent back for changes' }), el('span', { text: p.feedback })]));
+    } else if (p.status === 'approved' && p.feedback) {
+      root.appendChild(el('div', { class: 'feedback-box approved' }, [el('strong', { text: 'Approved' }), el('span', { text: p.feedback })]));
     }
 
     const actionRow = el('div', { class: 'panel-row', style: 'margin-bottom:20px' });
     actionRow.appendChild(downloadPdfButton());
-    if (state.role === 'region' && ['draft', 'rejected', 'under_review'].includes(q.status)) {
-      const submitBtn = el('button', { class: 'btn success', type: 'button', text: q.status === 'draft' ? 'Submit for Approval' : 'Resubmit for Approval' });
+    if (state.role === 'region' && ['draft', 'rejected', 'under_review'].includes(p.status)) {
+      const submitBtn = el('button', { class: 'btn success', type: 'button', text: p.status === 'draft' ? 'Submit for Approval' : 'Resubmit for Approval' });
       submitBtn.addEventListener('click', async () => {
         try {
-          await api(`/quarters/${state.quarterId}/submit`, { method: 'POST' });
+          await api(`/proposals/${state.marketCode}/${state.quarterSlug}/submit`, { method: 'POST' });
           toast('Submitted for approval');
-          await refreshCurrentQuarter();
+          await loadCurrentProposal();
           rerenderShell();
         } catch (e) { toast(e.message, true); }
       });
@@ -1089,15 +1114,15 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     }
     root.appendChild(actionRow);
 
-    if (state.role === 'admin' && q.status === 'submitted') {
-      root.appendChild(decisionPanel(q, async () => { await refreshCurrentQuarter(); rerenderShell(); }));
+    if (state.role === 'admin' && p.status === 'submitted') {
+      root.appendChild(decisionPanel(async () => { await loadCurrentProposal(); rerenderShell(); }));
     }
 
     root.appendChild(el('div', { class: 'panel-title', text: 'Monthly Cost-of-Retail budget (EUR) \u2014 free-typed' }));
-    root.appendChild(await budgetPanel(editable));
+    root.appendChild(budgetPanel(editable));
     root.appendChild(el('hr', { class: 'section-divider' }));
 
-    const s = await api(`/quarters/${state.quarterId}/summary/qcp-sign-off`);
+    const s = p.qcp_summary;
     root.appendChild(el('div', { class: 'panel-title', text: `${s.market} \u2014 ${s.quarterLabel} Budget Summary` }));
     root.appendChild(simpleTable(
       ['Month', 'CoR Volume', 'CoR P.U. Budget (EUR)', 'CoR Total Budget (EUR)'],
@@ -1126,8 +1151,8 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     ));
   }
 
-  async function budgetPanel(editable) {
-    const months = await api(`/quarters/${state.quarterId}/budget`);
+  function budgetPanel(editable) {
+    const months = state.proposal.budget_months;
     const panel = el('div', { class: 'panel' });
     const table = el('table', { class: 'data-table' }, [
       el('thead', {}, el('tr', {}, [
@@ -1140,8 +1165,11 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     months.forEach((m) => {
       const total = (Number(m.cor_volume) || 0) * (Number(m.cor_cost_pu_eur) || 0);
       const saveBudget = async (patch) => {
-        try { await api(`/quarters/${state.quarterId}/budget/${m.id}`, { method: 'PUT', body: JSON.stringify(patch) }); toast('Saved'); }
-        catch (e) { toast(e.message, true); }
+        try {
+          await api(`/proposals/${state.marketCode}/${state.quarterSlug}/budget/${m.month_order}`, { method: 'PUT', body: JSON.stringify(patch) });
+          toast('Saved to GitHub');
+          await loadCurrentProposal();
+        } catch (e) { toast(e.message, true); }
       };
       if (editable) {
         const labelInput = el('input', { type: 'text', value: m.month_label });
@@ -1174,7 +1202,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     const btn = el('button', { class: 'btn secondary', type: 'button', text: '\u2b07 Download Proposal PDF' });
     btn.addEventListener('click', async () => {
       try {
-        const res = await fetch(`/api/quarters/${state.quarterId}/proposal-pdf`, { headers: { Authorization: 'Bearer ' + state.token } });
+        const res = await fetch(`/api/proposals/${state.marketCode}/${state.quarterSlug}/pdf`, { headers: { Authorization: 'Bearer ' + state.token } });
         if (!res.ok) throw new Error('Could not generate PDF');
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
@@ -1192,7 +1220,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     ]);
   }
 
-  function decisionPanel(quarter, onDecided) {
+  function decisionPanel(onDecided) {
     const panel = el('div', { class: 'decision-panel' });
     panel.appendChild(el('div', { class: 'panel-title', text: 'Admin decision' }));
     const feedback = el('textarea', { placeholder: 'Feedback for the region (required for reject / under review)\u2026' });
@@ -1201,7 +1229,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     const decide = async (decision) => {
       if (decision !== 'approved' && !feedback.value.trim()) return toast('Add feedback explaining what needs to change', true);
       try {
-        await api(`/quarters/${quarter.id}/decision`, { method: 'POST', body: JSON.stringify({ decision, feedback: feedback.value.trim() || null }) });
+        await api(`/proposals/${state.marketCode}/${state.quarterSlug}/decision`, { method: 'POST', body: JSON.stringify({ decision, feedback: feedback.value.trim() || null }) });
         toast(`Marked as ${decision.replace('_', ' ')}`);
         onDecided();
       } catch (e) { toast(e.message, true); }
@@ -1215,15 +1243,15 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
 
   // ---------------- Admin: Proposal Tracker ----------------
   async function renderAdmin(root) {
-    const quarters = await api('/admin/quarters');
-    if (!quarters.length) {
+    const proposals = await api('/admin/proposals');
+    if (!proposals.length) {
       root.appendChild(el('div', { class: 'empty-state', text: 'No proposals yet.' }));
       return;
     }
-    quarters.forEach((q) => {
+    proposals.forEach((q) => {
       const card = el('div', { class: 'proposal-card' });
       const info = el('div', { class: 'info' }, [
-        el('span', { class: 'market-line', text: `${q.market_name} (${q.market_code}) \u2014 ${q.label}` }),
+        el('span', { class: 'market-line', text: `${q.display_name} (${q.market_code}) \u2014 ${q.quarter_label}` }),
         el('span', { class: `status-pill ${q.status}`, text: q.status.replace('_', ' '), style: 'width:fit-content' }),
       ]);
       const figures = el('div', { class: 'figures' }, [
@@ -1235,15 +1263,21 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       card.appendChild(info);
       card.appendChild(figures);
       const openBtn = el('button', { class: 'btn secondary small', type: 'button', text: 'Open' });
-      openBtn.addEventListener('click', () => {
-        state.marketId = q.market_id;
-        state.quarterId = q.id;
+      openBtn.addEventListener('click', async () => {
+        state.marketCode = q.market_code;
+        state.quarterSlug = q.quarter_slug;
         state.view = 'signoff';
+        await loadCurrentProposal();
         rerenderShell();
       });
       card.appendChild(openBtn);
       if (q.status === 'submitted') {
-        card.appendChild(decisionPanel(q, async () => rerenderShell()));
+        const panel = decisionPanel(async () => {
+          state.marketCode = q.market_code;
+          state.quarterSlug = q.quarter_slug;
+          rerenderShell();
+        });
+        card.appendChild(panel);
       }
       root.appendChild(card);
     });
