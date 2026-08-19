@@ -8,9 +8,7 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
-      - key: REGION_PASSWORD
-        sync: false
-      - key: ADMIN_PASSWORD
+      - key: APP_PASSWORD
         sync: false
       - key: GITHUB_TOKEN
         sync: false

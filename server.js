@@ -22,19 +22,18 @@ const ExcelJS = require('exceljs');
 // ---------------------------------------------------------------------------
 // SECTION 0 — Auth
 //
-// Simple shared-password gate matching the "regional or admin password"
-// pattern: one password for regional users, one for the central admin — no
-// per-user accounts. Sessions live in memory (a Map), so they're lost on a
-// redeploy/restart, which just means signing in again — acceptable for an
-// internal tool. Set REGION_PASSWORD and ADMIN_PASSWORD as environment
-// variables before deploying; there is no built-in default password.
+// One shared password for everyone (APP_PASSWORD) — no per-user accounts.
+// At sign-in the user also picks their region from a fixed list; picking
+// "Admin" grants cross-region access (Proposal Tracker, approve/reject).
+// Sessions live in memory (a Map), so they're lost on a redeploy/restart,
+// which just means signing in again — acceptable for an internal tool.
 // ---------------------------------------------------------------------------
-const sessions = new Map(); // token -> { role, createdAt }
+const sessions = new Map(); // token -> { role, region, createdAt }
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-function createSession(role) {
+function createSession(role, region) {
   const token = crypto.randomBytes(24).toString('hex');
-  sessions.set(token, { role, createdAt: Date.now() });
+  sessions.set(token, { role, region: region || null, createdAt: Date.now() });
   return token;
 }
 
@@ -54,6 +53,7 @@ function requireAuth(req, res, next) {
   const session = token && getSession(token);
   if (!session) return res.status(401).json({ error: 'Not signed in.' });
   req.role = session.role;
+  req.region = session.region;
   next();
 }
 
@@ -142,12 +142,12 @@ function slugify(label) {
   return String(label).trim().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-function fileName(marketCode, quarterSlug) {
-  return `${marketCode}__${quarterSlug}.json`;
+function fileName(region, quarterSlug) {
+  return `${region}__${quarterSlug}.json`;
 }
 
-async function loadProposalRaw(marketCode, quarterSlug) {
-  const res = await ghFetch('GET', `${DATA_DIR}/${fileName(marketCode, quarterSlug)}?ref=${encodeURIComponent(GITHUB_BRANCH)}`);
+async function loadProposalRaw(region, quarterSlug) {
+  const res = await ghFetch('GET', `${DATA_DIR}/${fileName(region, quarterSlug)}?ref=${encodeURIComponent(GITHUB_BRANCH)}`);
   if (res.status === 404) return null;
   if (!res.ok) throw await ghErrorFor(res);
   const json = await res.json();
@@ -155,11 +155,11 @@ async function loadProposalRaw(marketCode, quarterSlug) {
   return { data: JSON.parse(content), sha: json.sha };
 }
 
-async function saveProposalRaw(marketCode, quarterSlug, data, sha) {
+async function saveProposalRaw(region, quarterSlug, data, sha) {
   data.updated_at = new Date().toISOString();
   const content = Buffer.from(JSON.stringify(data, null, 2)).toString('base64');
-  const res = await ghFetch('PUT', `${DATA_DIR}/${fileName(marketCode, quarterSlug)}`, {
-    message: `Save proposal: ${marketCode} ${data.quarter_label} (${data.status})`,
+  const res = await ghFetch('PUT', `${DATA_DIR}/${fileName(region, quarterSlug)}`, {
+    message: `Save proposal: ${region} ${data.quarter_label} (${data.status})`,
     content,
     branch: GITHUB_BRANCH,
     ...(sha ? { sha } : {}),
@@ -181,9 +181,9 @@ async function saveProposalRaw(marketCode, quarterSlug, data, sha) {
   return json.content.sha;
 }
 
-async function deleteProposalRaw(marketCode, quarterSlug, sha) {
-  const res = await ghFetch('DELETE', `${DATA_DIR}/${fileName(marketCode, quarterSlug)}`, {
-    message: `Delete proposal: ${marketCode} ${quarterSlug}`,
+async function deleteProposalRaw(region, quarterSlug, sha) {
+  const res = await ghFetch('DELETE', `${DATA_DIR}/${fileName(region, quarterSlug)}`, {
+    message: `Delete proposal: ${region} ${quarterSlug}`,
     sha,
     branch: GITHUB_BRANCH,
   });
@@ -203,14 +203,14 @@ async function listProposalsRaw() {
     .map((it) => {
       const base = it.name.replace(/\.json$/, '');
       const sep = base.indexOf('__');
-      const marketCode = sep === -1 ? base : base.slice(0, sep);
+      const region = sep === -1 ? base : base.slice(0, sep);
       const quarterSlug = sep === -1 ? '' : base.slice(sep + 2);
-      return { marketCode, quarterSlug };
+      return { region, quarterSlug };
     });
 }
 
-async function getProposalOr404(marketCode, quarterSlug) {
-  const loaded = await loadProposalRaw(marketCode, quarterSlug);
+async function getProposalOr404(region, quarterSlug) {
+  const loaded = await loadProposalRaw(region, quarterSlug);
   if (!loaded) {
     const err = new Error('Proposal not found');
     err.statusCode = 404;
@@ -275,65 +275,17 @@ const PROGRAMME_TYPES = [
   name, code_letter, sort_order, default_budget_alignment, default_channel_type,
 }));
 
-const MARKETS = [
-  { region: 'AFRICA', market: 'Botswana', code: 'BW' },
-  { region: 'AFRICA', market: 'Ghana', code: 'GH' },
-  { region: 'AFRICA', market: 'Kenya', code: 'KE' },
-  { region: 'AFRICA', market: 'Morocco', code: 'MA' },
-  { region: 'AFRICA', market: 'Namibia', code: 'NA' },
-  { region: 'AFRICA', market: 'Nigeria', code: 'NG' },
-  { region: 'AFRICA', market: 'Senegal', code: 'SN' },
-  { region: 'AFRICA', market: 'South Africa', code: 'ZA' },
-  { region: 'AFRICA', market: 'Tanzania', code: 'TZ' },
-  { region: 'AMERICAS', market: 'Canada', code: 'CA' },
-  { region: 'AMERICAS', market: 'Mexico', code: 'MX' },
-  { region: 'AMERICAS', market: 'United States of America', code: 'US' },
-  { region: 'APAC', market: 'APAC (Indirect)', code: 'AI' },
-  { region: 'APAC', market: 'Australia', code: 'AU' },
-  { region: 'APAC', market: 'Fiji', code: 'FJ' },
-  { region: 'APAC', market: 'Mongolia', code: 'MN' },
-  { region: 'APAC', market: 'New Zealand', code: 'NZ' },
-  { region: 'APAC', market: 'South Korea', code: 'KR' },
-  { region: 'APAC', market: 'Taiwan', code: 'TW' },
-  { region: 'CHINA', market: 'China', code: 'CN' },
-  { region: 'EUROPE', market: 'EUROPE (Dealer)', code: 'E1' },
-  { region: 'EUROPE', market: 'EUROPE (Distributor)', code: 'E2' },
-  { region: 'EUROPE', market: 'Austria', code: 'AT' },
-  { region: 'EUROPE', market: 'Belgium', code: 'BE' },
-  { region: 'EUROPE', market: 'Bosnia and Herzegovina', code: 'BA' },
-  { region: 'EUROPE', market: 'Bulgaria', code: 'BG' },
-  { region: 'EUROPE', market: 'Croatia', code: 'HR' },
-  { region: 'EUROPE', market: 'Czech Republic', code: 'CZ' },
-  { region: 'EUROPE', market: 'Finland', code: 'FI' },
-  { region: 'EUROPE', market: 'France', code: 'FR' },
-  { region: 'EUROPE', market: 'Germany', code: 'DE' },
-  { region: 'EUROPE', market: 'Hungary', code: 'HU' },
-  { region: 'EUROPE', market: 'Iceland', code: 'IS' },
-  { region: 'EUROPE', market: 'Italy', code: 'IT' },
-  { region: 'EUROPE', market: 'Luxembourg', code: 'LU' },
-  { region: 'EUROPE', market: 'Macedonia', code: 'MK' },
-  { region: 'EUROPE', market: 'Monaco', code: 'MC' },
-  { region: 'EUROPE', market: 'Netherlands', code: 'NL' },
-  { region: 'EUROPE', market: 'Norway', code: 'NO' },
-  { region: 'EUROPE', market: 'Poland', code: 'PL' },
-  { region: 'EUROPE', market: 'Romania', code: 'RO' },
-  { region: 'EUROPE', market: 'Serbia', code: 'RS' },
-  { region: 'EUROPE', market: 'Slovakia', code: 'SK' },
-  { region: 'EUROPE', market: 'Spain', code: 'ES' },
-  { region: 'EUROPE', market: 'Sweden', code: 'SE' },
-  { region: 'EUROPE', market: 'Switzerland', code: 'CH' },
-  { region: 'EUROPE', market: 'Ukraine', code: 'UA' },
-  { region: 'ME', market: 'MIDDLE EAST', code: 'ME' },
-  { region: 'ME', market: 'Bahrain', code: 'BH' },
-  { region: 'ME', market: 'Kuwait', code: 'KW' },
-  { region: 'ME', market: 'Oman', code: 'OM' },
-  { region: 'ME', market: 'Qatar', code: 'QA' },
-  { region: 'ME', market: 'Saudi Arabia', code: 'SA' },
-  { region: 'ME', market: 'United Arab Emirates', code: 'AE' },
-  { region: 'UKI', market: 'UKI', code: 'UI' },
-  { region: 'UKI', market: 'Ireland', code: 'IE' },
-  { region: 'UKI', market: 'United Kingdom', code: 'GB' },
-].map(({ region, market, code }) => ({ code, market_name: market, region }));
+// The six regions the business actually plans by. Each gets a short code
+// used to build programme/campaign codes (e.g. "UI3P0"), matching the
+// pattern from the original workbook (UKI's own code there was "UI").
+const REGIONS = [
+  { code: 'UI', region: 'UKI', display_name: 'UKI' },
+  { code: 'EU', region: 'EUROPE', display_name: 'Europe' },
+  { code: 'AP', region: 'APAC', display_name: 'APAC' },
+  { code: 'AM', region: 'AMERICAS', display_name: 'Americas' },
+  { code: 'ME', region: 'MEA', display_name: 'MEA' },
+  { code: 'CN', region: 'CHINA', display_name: 'China' },
+];
 
 // ---------------------------------------------------------------------------
 // SECTION 3 — Calculation engine (mirrors the workbook's formula logic:
@@ -358,12 +310,12 @@ function toEur(localValue, currencyCode, rates = CURRENCY_RATES) {
 
 /**
  * Programme ID / code, mirrors:
- * =IF(codeRequired="Yes", marketCode & "3" & typeCodeLetter & sequenceNumber, "No Code Required")
+ * =IF(codeRequired="Yes", region & "3" & typeCodeLetter & sequenceNumber, "No Code Required")
  * sequenceNumber = count of programmes of the same type before this one (0-based), within the quarter.
  */
-function programmeCode(marketCode, typeCodeLetter, sequenceNumber, codeRequired) {
+function programmeCode(region, typeCodeLetter, sequenceNumber, codeRequired) {
   if (!codeRequired) return 'No Code Required';
-  return `${marketCode}3${typeCodeLetter}${sequenceNumber}`;
+  return `${region}3${typeCodeLetter}${sequenceNumber}`;
 }
 
 /**
@@ -610,7 +562,7 @@ function enrichProposal(data) {
     const seq = seqByType[key] || 0;
     seqByType[key] = seq + 1;
     const typeInfo = typesByName[p.programme_type] || {};
-    const code = programmeCode(data.market_code, typeInfo.code_letter || '?', seq, p.code_required);
+    const code = programmeCode(data.region_code, typeInfo.code_letter || '?', seq, p.code_required);
     const derived = deriveProgramme({ ...p, programme_code: code }, typesByName, CURRENCY_RATES);
     derived.model_eligibility_summary = modelSummary(p.model_eligibility, MODEL_GROUPS);
     return derived;
@@ -642,7 +594,7 @@ function enrichProposal(data) {
     programme_summary: programmeLevelSummary(derivedProgrammes),
     campaign_summary: campaignLevelSummary(derivedCampaigns),
     qcp_summary: (() => {
-      const s = qcpSignOffSummary(data.budget_months || [], derivedProgrammes, data.display_name || data.market_code);
+      const s = qcpSignOffSummary(data.budget_months || [], derivedProgrammes, data.region);
       s.quarterLabel = data.quarter_label;
       return s;
     })(),
@@ -663,31 +615,34 @@ app.use(express.json());
 
 // ---- Auth (public — no session required) ----
 app.post('/api/auth/login', (req, res) => {
-  const { password } = req.body || {};
+  const { region, password } = req.body || {};
   if (!password) return res.status(400).json({ error: 'Password is required.' });
-  if (!process.env.REGION_PASSWORD && !process.env.ADMIN_PASSWORD) {
-    return res.status(500).json({ error: 'Server is not configured: set REGION_PASSWORD and ADMIN_PASSWORD.' });
+  if (!region) return res.status(400).json({ error: 'Select a region.' });
+  if (!process.env.APP_PASSWORD) {
+    return res.status(500).json({ error: 'Server is not configured: set APP_PASSWORD.' });
   }
-  if (process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD) {
-    return res.json({ token: createSession('admin'), role: 'admin' });
+  if (password !== process.env.APP_PASSWORD) {
+    return res.status(401).json({ error: 'Incorrect password.' });
   }
-  if (process.env.REGION_PASSWORD && password === process.env.REGION_PASSWORD) {
-    return res.json({ token: createSession('region'), role: 'region' });
+  if (region === 'Admin') {
+    return res.json({ token: createSession('admin', null), role: 'admin', region: null });
   }
-  res.status(401).json({ error: 'Incorrect password.' });
+  const match = REGIONS.find((r) => r.region === region);
+  if (!match) return res.status(400).json({ error: 'Unrecognised region.' });
+  res.json({ token: createSession('region', match.region), role: 'region', region: match.region });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 const api = express.Router();
 api.use(requireAuth); // everything below requires a signed-in session
 
-api.get('/auth/session', (req, res) => res.json({ role: req.role }));
+api.get('/auth/session', (req, res) => res.json({ role: req.role, region: req.region }));
 
 // ---- Reference data ----
 api.get('/reference', (req, res) => {
   res.json({
     currencies: Object.keys(CURRENCY_RATES).sort().map((code) => ({ code, eur_rate: CURRENCY_RATES[code] })),
-    markets: MARKETS,
+    regions: REGIONS,
     modelGroups: MODEL_GROUPS,
     modelYears: MODEL_YEARS,
     programmeTypes: PROGRAMME_TYPES,
@@ -697,24 +652,42 @@ api.get('/reference', (req, res) => {
 });
 
 // ---- Proposal list (powers the market/quarter picker + "+ New proposal") ----
+// A region user only ever sees/touches their own region's proposals; an
+// admin (no home region) can reach any of them.
+function assertRegionMatch(req) {
+  if (req.role === 'admin') return;
+  if (req.params.region !== req.region) {
+    const err = new Error('You can only access proposals for your own region.');
+    err.statusCode = 403;
+    throw err;
+  }
+}
+api.use('/proposals/:region', (req, res, next) => {
+  try { assertRegionMatch(req); next(); } catch (err) { next(err); }
+});
+
 api.get('/proposals', async (req, res, next) => {
   try {
-    res.json(await listProposalsRaw());
+    const items = await listProposalsRaw();
+    res.json(req.role === 'admin' ? items : items.filter((it) => it.region === req.region));
   } catch (err) { next(err); }
 });
 
 api.post('/proposals', async (req, res, next) => {
   try {
-    const { market_code, quarter_label } = req.body;
-    if (!market_code || !quarter_label) return res.status(400).json({ error: 'market_code and quarter_label are required' });
-    const marketRef = MARKETS.find((m) => m.code === market_code);
-    if (!marketRef) return res.status(400).json({ error: 'Unrecognised market_code' });
+    // Region users always create in their own region; only an admin (who has
+    // no home region) needs to specify one explicitly.
+    const targetRegion = req.role === 'admin' ? req.body.region : req.region;
+    const { quarter_label } = req.body;
+    if (!targetRegion || !quarter_label) return res.status(400).json({ error: 'region and quarter_label are required' });
+    const regionRef = REGIONS.find((r) => r.region === targetRegion);
+    if (!regionRef) return res.status(400).json({ error: 'Unrecognised region' });
     const quarterSlug = slugify(quarter_label);
     if (!quarterSlug) return res.status(400).json({ error: 'quarter_label must contain at least one letter or number' });
-    const existing = await loadProposalRaw(market_code, quarterSlug);
-    if (existing) return res.status(409).json({ error: 'A proposal already exists for this market and quarter.' });
+    const existing = await loadProposalRaw(targetRegion, quarterSlug);
+    if (existing) return res.status(409).json({ error: 'A proposal already exists for this region and quarter.' });
     const data = {
-      market_code, display_name: marketRef.market_name, region: marketRef.region,
+      region: regionRef.region, region_code: regionRef.code,
       quarter_label, status: 'draft', submitted_at: null, decided_at: null, decided_by: null, feedback: null,
       created_at: new Date().toISOString(),
       budget_months: [
@@ -724,34 +697,34 @@ api.post('/proposals', async (req, res, next) => {
       ],
       programmes: [], incentive_packages: [], sales_campaigns: [],
     };
-    await saveProposalRaw(market_code, quarterSlug, data, null);
-    res.status(201).json({ marketCode: market_code, quarterSlug, ...enrichProposal(data) });
+    await saveProposalRaw(targetRegion, quarterSlug, data, null);
+    res.status(201).json({ region: targetRegion, quarterSlug, ...enrichProposal(data) });
   } catch (err) { next(err); }
 });
 
-api.get('/proposals/:marketCode/:quarterSlug', async (req, res, next) => {
+api.get('/proposals/:region/:quarterSlug', async (req, res, next) => {
   try {
-    const loaded = await getProposalOr404(req.params.marketCode, req.params.quarterSlug);
+    const loaded = await getProposalOr404(req.params.region, req.params.quarterSlug);
     res.json(enrichProposal(loaded.data));
   } catch (err) { next(err); }
 });
 
-api.delete('/proposals/:marketCode/:quarterSlug', async (req, res, next) => {
+api.delete('/proposals/:region/:quarterSlug', async (req, res, next) => {
   try {
-    const loaded = await getProposalOr404(req.params.marketCode, req.params.quarterSlug);
+    const loaded = await getProposalOr404(req.params.region, req.params.quarterSlug);
     if (req.role !== 'admin' && !EDITABLE_STATUSES.includes(loaded.data.status)) {
       return res.status(409).json({ error: 'Only a draft proposal can be deleted \u2014 ask an admin if an approved or submitted one needs removing.' });
     }
-    await deleteProposalRaw(req.params.marketCode, req.params.quarterSlug, loaded.sha);
+    await deleteProposalRaw(req.params.region, req.params.quarterSlug, loaded.sha);
     res.status(204).end();
   } catch (err) { next(err); }
 });
 
 // ---- Budget ----
-api.put('/proposals/:marketCode/:quarterSlug/budget/:monthOrder', async (req, res, next) => {
+api.put('/proposals/:region/:quarterSlug/budget/:monthOrder', async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug, monthOrder } = req.params;
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const { region, quarterSlug, monthOrder } = req.params;
+    const loaded = await getProposalOr404(region, quarterSlug);
     assertProposalEditable(loaded.data, req.role);
     const month = (loaded.data.budget_months || []).find((m) => String(m.month_order) === String(monthOrder));
     if (!month) return res.status(404).json({ error: 'Budget month not found' });
@@ -760,16 +733,16 @@ api.put('/proposals/:marketCode/:quarterSlug/budget/:monthOrder', async (req, re
     if (cor_volume !== undefined) month.cor_volume = cor_volume;
     if (cor_cost_pu_eur !== undefined) month.cor_cost_pu_eur = cor_cost_pu_eur;
     if (interest_budget_eur !== undefined) month.interest_budget_eur = interest_budget_eur;
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.json(enrichProposal(loaded.data));
   } catch (err) { next(err); }
 });
 
 // ---- Programmes (Stage 1) ----
-api.post('/proposals/:marketCode/:quarterSlug/programmes', async (req, res, next) => {
+api.post('/proposals/:region/:quarterSlug/programmes', async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug } = req.params;
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const { region, quarterSlug } = req.params;
+    const loaded = await getProposalOr404(region, quarterSlug);
     assertProposalEditable(loaded.data, req.role);
     const { title, programme_type, activation_volume, code_required, stackable, payout_method, currency, local_cost_pu, model_eligibility, marketed, marketing_channels } = req.body;
     if (!title || !programme_type || !currency) return res.status(400).json({ error: 'title, programme_type and currency are required' });
@@ -780,43 +753,43 @@ api.post('/proposals/:marketCode/:quarterSlug/programmes', async (req, res, next
       payout_method: payout_method || 'Discount On Invoice', currency, local_cost_pu: local_cost_pu || 0,
       model_eligibility: model_eligibility || {}, marketed: !!marketed, marketing_channels: marketing_channels || [],
     });
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.status(201).json(enrichProposal(loaded.data));
   } catch (err) { next(err); }
 });
 
-api.put('/proposals/:marketCode/:quarterSlug/programmes/:id', async (req, res, next) => {
+api.put('/proposals/:region/:quarterSlug/programmes/:id', async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug, id } = req.params;
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const { region, quarterSlug, id } = req.params;
+    const loaded = await getProposalOr404(region, quarterSlug);
     assertProposalEditable(loaded.data, req.role);
     const programme = (loaded.data.programmes || []).find((p) => String(p.id) === String(id));
     if (!programme) return res.status(404).json({ error: 'Programme not found' });
     const fields = ['title', 'programme_type', 'activation_volume', 'code_required', 'stackable', 'payout_method', 'currency', 'local_cost_pu', 'model_eligibility', 'marketed', 'marketing_channels'];
     fields.forEach((f) => { if (req.body[f] !== undefined) programme[f] = req.body[f]; });
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.json(enrichProposal(loaded.data));
   } catch (err) { next(err); }
 });
 
-api.delete('/proposals/:marketCode/:quarterSlug/programmes/:id', async (req, res, next) => {
+api.delete('/proposals/:region/:quarterSlug/programmes/:id', async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug, id } = req.params;
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const { region, quarterSlug, id } = req.params;
+    const loaded = await getProposalOr404(region, quarterSlug);
     assertProposalEditable(loaded.data, req.role);
     loaded.data.programmes = (loaded.data.programmes || []).filter((p) => String(p.id) !== String(id));
     loaded.data.incentive_packages = (loaded.data.incentive_packages || []).filter((pkg) => !(pkg.programme_ids || []).map(String).includes(String(id)));
     loaded.data.sales_campaigns = (loaded.data.sales_campaigns || []).filter((c) => String(c.base_programme_id) !== String(id));
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.status(204).end();
   } catch (err) { next(err); }
 });
 
 // ---- Incentive packages (Stage 2) ----
-api.post('/proposals/:marketCode/:quarterSlug/packages', async (req, res, next) => {
+api.post('/proposals/:region/:quarterSlug/packages', async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug } = req.params;
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const { region, quarterSlug } = req.params;
+    const loaded = await getProposalOr404(region, quarterSlug);
     assertProposalApproved(loaded.data, req.role);
     const { programme_ids, secondary_code } = req.body;
     if (!Array.isArray(programme_ids) || programme_ids.length < 2 || programme_ids.length > 5) {
@@ -830,28 +803,28 @@ api.post('/proposals/:marketCode/:quarterSlug/packages', async (req, res, next) 
     if (notStackable.length) return res.status(400).json({ error: `Programme id(s) ${notStackable.join(', ')} are not marked as stackable.` });
     loaded.data.incentive_packages = loaded.data.incentive_packages || [];
     loaded.data.incentive_packages.push({ id: nextId(loaded.data.incentive_packages), secondary_code: secondary_code || null, programme_ids });
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.status(201).json(enrichProposal(loaded.data));
   } catch (err) { next(err); }
 });
 
-api.delete('/proposals/:marketCode/:quarterSlug/packages/:id', async (req, res, next) => {
+api.delete('/proposals/:region/:quarterSlug/packages/:id', async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug, id } = req.params;
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const { region, quarterSlug, id } = req.params;
+    const loaded = await getProposalOr404(region, quarterSlug);
     assertProposalApproved(loaded.data, req.role);
     loaded.data.incentive_packages = (loaded.data.incentive_packages || []).filter((p) => String(p.id) !== String(id));
     loaded.data.sales_campaigns = (loaded.data.sales_campaigns || []).filter((c) => String(c.incentive_package_id) !== String(id));
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.status(204).end();
   } catch (err) { next(err); }
 });
 
 // ---- Sales campaigns (Stage 3) ----
-api.post('/proposals/:marketCode/:quarterSlug/campaigns', async (req, res, next) => {
+api.post('/proposals/:region/:quarterSlug/campaigns', async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug } = req.params;
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const { region, quarterSlug } = req.params;
+    const loaded = await getProposalOr404(region, quarterSlug);
     assertProposalApproved(loaded.data, req.role);
     const { base_programme_id, incentive_package_id, forecast_volume } = req.body;
     if (!base_programme_id) return res.status(400).json({ error: 'base_programme_id is required' });
@@ -864,27 +837,27 @@ api.post('/proposals/:marketCode/:quarterSlug/campaigns', async (req, res, next)
     const volume = (forecast_volume === undefined || forecast_volume === null || forecast_volume === '') ? base.activation_volume : forecast_volume;
     loaded.data.sales_campaigns = loaded.data.sales_campaigns || [];
     loaded.data.sales_campaigns.push({ id: nextId(loaded.data.sales_campaigns), base_programme_id: Number(base_programme_id), incentive_package_id: incentive_package_id ? Number(incentive_package_id) : null, forecast_volume: volume });
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.status(201).json(enrichProposal(loaded.data));
   } catch (err) { next(err); }
 });
 
-api.delete('/proposals/:marketCode/:quarterSlug/campaigns/:id', async (req, res, next) => {
+api.delete('/proposals/:region/:quarterSlug/campaigns/:id', async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug, id } = req.params;
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const { region, quarterSlug, id } = req.params;
+    const loaded = await getProposalOr404(region, quarterSlug);
     assertProposalApproved(loaded.data, req.role);
     loaded.data.sales_campaigns = (loaded.data.sales_campaigns || []).filter((c) => String(c.id) !== String(id));
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.status(204).end();
   } catch (err) { next(err); }
 });
 
 // ---- Approval workflow ----
-api.post('/proposals/:marketCode/:quarterSlug/submit', async (req, res, next) => {
+api.post('/proposals/:region/:quarterSlug/submit', async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug } = req.params;
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const { region, quarterSlug } = req.params;
+    const loaded = await getProposalOr404(region, quarterSlug);
     if (!EDITABLE_STATUSES.includes(loaded.data.status)) {
       return res.status(409).json({ error: `Can't submit \u2014 this proposal is already "${loaded.data.status}".` });
     }
@@ -892,19 +865,19 @@ api.post('/proposals/:marketCode/:quarterSlug/submit', async (req, res, next) =>
     loaded.data.status = 'submitted';
     loaded.data.submitted_at = new Date().toISOString();
     loaded.data.decided_at = null; loaded.data.decided_by = null; loaded.data.feedback = null;
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.json(enrichProposal(loaded.data));
   } catch (err) { next(err); }
 });
 
-api.post('/proposals/:marketCode/:quarterSlug/decision', requireAdmin, async (req, res, next) => {
+api.post('/proposals/:region/:quarterSlug/decision', requireAdmin, async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug } = req.params;
+    const { region, quarterSlug } = req.params;
     const { decision, feedback, decided_by } = req.body;
     if (!['approved', 'rejected', 'under_review'].includes(decision)) {
       return res.status(400).json({ error: 'decision must be approved, rejected, or under_review' });
     }
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const loaded = await getProposalOr404(region, quarterSlug);
     if (loaded.data.status !== 'submitted') {
       return res.status(409).json({ error: `Can't decide on a proposal that is "${loaded.data.status}" (must be submitted).` });
     }
@@ -912,16 +885,16 @@ api.post('/proposals/:marketCode/:quarterSlug/decision', requireAdmin, async (re
     loaded.data.decided_at = new Date().toISOString();
     loaded.data.decided_by = decided_by || 'Central Admin';
     loaded.data.feedback = feedback || null;
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.json(enrichProposal(loaded.data));
   } catch (err) { next(err); }
 });
 
 // Region: revert an approved proposal back to draft (only if nothing built against it yet).
-api.post('/proposals/:marketCode/:quarterSlug/reopen', async (req, res, next) => {
+api.post('/proposals/:region/:quarterSlug/reopen', async (req, res, next) => {
   try {
-    const { marketCode, quarterSlug } = req.params;
-    const loaded = await getProposalOr404(marketCode, quarterSlug);
+    const { region, quarterSlug } = req.params;
+    const loaded = await getProposalOr404(region, quarterSlug);
     if (loaded.data.status !== 'approved' && req.role !== 'admin') {
       return res.status(409).json({ error: 'Only an approved proposal can be reopened.' });
     }
@@ -931,7 +904,7 @@ api.post('/proposals/:marketCode/:quarterSlug/reopen', async (req, res, next) =>
     }
     loaded.data.status = 'draft';
     loaded.data.submitted_at = null; loaded.data.decided_at = null; loaded.data.decided_by = null; loaded.data.feedback = null;
-    await saveProposalRaw(marketCode, quarterSlug, loaded.data, loaded.sha);
+    await saveProposalRaw(region, quarterSlug, loaded.data, loaded.sha);
     res.json(enrichProposal(loaded.data));
   } catch (err) { next(err); }
 });
@@ -941,12 +914,12 @@ api.get('/admin/proposals', requireAdmin, async (req, res, next) => {
   try {
     const items = await listProposalsRaw();
     const results = await Promise.all(items.map(async (item) => {
-      const loaded = await loadProposalRaw(item.marketCode, item.quarterSlug).catch(() => null);
+      const loaded = await loadProposalRaw(item.region, item.quarterSlug).catch(() => null);
       if (!loaded) return null;
       const enriched = enrichProposal(loaded.data);
       return {
-        market_code: item.marketCode, quarter_slug: item.quarterSlug,
-        display_name: loaded.data.display_name, quarter_label: loaded.data.quarter_label,
+        region: item.region, quarter_slug: item.quarterSlug,
+        quarter_label: loaded.data.quarter_label,
         status: loaded.data.status, submitted_at: loaded.data.submitted_at, feedback: loaded.data.feedback,
         programme_count: (loaded.data.programmes || []).length,
         cor_proposal_eur: enriched.qcp_summary.corProposalEur,
@@ -961,9 +934,9 @@ api.get('/admin/proposals', requireAdmin, async (req, res, next) => {
 });
 
 // ---- Proposal PDF (generated on demand, always reflects current data) ----
-api.get('/proposals/:marketCode/:quarterSlug/pdf', async (req, res, next) => {
+api.get('/proposals/:region/:quarterSlug/pdf', async (req, res, next) => {
   try {
-    const loaded = await getProposalOr404(req.params.marketCode, req.params.quarterSlug);
+    const loaded = await getProposalOr404(req.params.region, req.params.quarterSlug);
     const data = loaded.data;
     const enriched = enrichProposal(data);
     const summary = enriched.qcp_summary;
@@ -971,7 +944,7 @@ api.get('/proposals/:marketCode/:quarterSlug/pdf', async (req, res, next) => {
     const programmes = enriched.programmes;
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${data.display_name.replace(/\s+/g, '_')}_${data.quarter_label.replace(/\s+/g, '_')}_Proposal.pdf"`);
+    res.setHeader('Content-Disposition', `inline; filename="${data.region.replace(/\s+/g, '_')}_${data.quarter_label.replace(/\s+/g, '_')}_Proposal.pdf"`);
 
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
     doc.pipe(res);
@@ -1000,7 +973,7 @@ api.get('/proposals/:marketCode/:quarterSlug/pdf', async (req, res, next) => {
     }
 
     doc.font('Helvetica').fontSize(9).fillColor(GREY).text('INEOS GRENADIER  \u00b7  SALES CAMPAIGN GENERATOR', LEFT, 50, { characterSpacing: 1 });
-    doc.font('Helvetica-Bold').fontSize(20).fillColor('#000000').text(`${data.display_name} \u2014 ${data.quarter_label}`, LEFT, 70);
+    doc.font('Helvetica-Bold').fontSize(20).fillColor('#000000').text(`${data.region} \u2014 ${data.quarter_label}`, LEFT, 70);
     doc.font('Helvetica').fontSize(11).fillColor(RED).text('Quarterly Campaign Proposal', LEFT, 96);
     doc.fontSize(9).fillColor(GREY).text(
       `Status: ${data.status.toUpperCase()}` +
@@ -1069,9 +1042,9 @@ api.get('/proposals/:marketCode/:quarterSlug/pdf', async (req, res, next) => {
 });
 
 // ---- Excel exports (for downstream ingest systems) ----
-api.get('/proposals/:marketCode/:quarterSlug/exports/programmes', async (req, res, next) => {
+api.get('/proposals/:region/:quarterSlug/exports/programmes', async (req, res, next) => {
   try {
-    const loaded = await getProposalOr404(req.params.marketCode, req.params.quarterSlug);
+    const loaded = await getProposalOr404(req.params.region, req.params.quarterSlug);
     const enriched = enrichProposal(loaded.data);
 
     const wb = new ExcelJS.Workbook();
@@ -1090,7 +1063,7 @@ api.get('/proposals/:marketCode/:quarterSlug/exports/programmes', async (req, re
     ws.getRow(1).font = { bold: true };
     enriched.programmes.forEach((p) => {
       ws.addRow({
-        market: loaded.data.market_code, quarter: loaded.data.quarter_label, code: p.programme_code, title: p.title,
+        market: loaded.data.region, quarter: loaded.data.quarter_label, code: p.programme_code, title: p.title,
         type: p.programme_type, channel: p.channel_type, alignment: p.budget_alignment, currency: p.currency,
         cost_pu: p.local_cost_pu, cost_pu_eur: p.eur_cost_pu, volume: p.activation_volume, total_eur: p.total_cost_eur,
         code_required: p.code_required ? 'Yes' : 'No', stackable: p.stackable ? 'Yes' : 'No', payout: p.payout_method,
@@ -1106,9 +1079,9 @@ api.get('/proposals/:marketCode/:quarterSlug/exports/programmes', async (req, re
   } catch (err) { next(err); }
 });
 
-api.get('/proposals/:marketCode/:quarterSlug/exports/codes', async (req, res, next) => {
+api.get('/proposals/:region/:quarterSlug/exports/codes', async (req, res, next) => {
   try {
-    const loaded = await getProposalOr404(req.params.marketCode, req.params.quarterSlug);
+    const loaded = await getProposalOr404(req.params.region, req.params.quarterSlug);
     const enriched = enrichProposal(loaded.data);
 
     const wb = new ExcelJS.Workbook();
@@ -1124,7 +1097,7 @@ api.get('/proposals/:marketCode/:quarterSlug/exports/codes', async (req, res, ne
     ws.getRow(1).font = { bold: true };
     enriched.sales_campaigns.forEach((c) => {
       ws.addRow({
-        market: loaded.data.market_code, quarter: loaded.data.quarter_label, code: c.campaign_code, title: c.campaign_title,
+        market: loaded.data.region, quarter: loaded.data.quarter_label, code: c.campaign_code, title: c.campaign_title,
         channel: c.channel_type, alignment: c.budget_alignment, currency: c.currency, cost_pu: c.cost_pu_local,
         cost_pu_eur: c.cost_pu_eur, volume: c.forecast_volume, total_eur: c.total_cost_eur,
       });
@@ -1150,9 +1123,18 @@ app.use((err, req, res, next) => {
   res.status(err.statusCode || 500).json({ error: err.message || 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Sales Campaign Generator listening on port ${PORT}`);
   if (!GITHUB_TOKEN || !GITHUB_REPO) {
     console.warn('WARNING: GITHUB_TOKEN and/or GITHUB_REPO are not set — proposal storage will not work until they are configured.');
   }
 });
+
+// Node's default keep-alive timeout (5s) is shorter than most reverse proxies'
+// (Render's included). When the proxy reuses a connection Node has already
+// started tearing down, the client gets back a 200 with an empty body — the
+// exact "empty response, even after retrying" symptom seen in testing. Both
+// values must exceed the proxy's own keep-alive timeout; headersTimeout must
+// exceed keepAliveTimeout or Node's own assertion on startup throws.
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;

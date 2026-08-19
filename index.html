@@ -333,9 +333,10 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
   const state = {
     token: localStorage.getItem('scg_token') || null,
     role: localStorage.getItem('scg_role') || null,
+    region: localStorage.getItem('scg_region') || null, // fixed for the session once signed in; null for admin
     reference: null,
-    proposalsList: [], // [{marketCode, quarterSlug}] — every saved proposal, from GitHub
-    marketCode: null,
+    proposalsList: [], // [{region, quarterSlug}] — every saved proposal for this session's scope, from GitHub
+    marketCode: null, // holds a region name ("UKI", "EUROPE", ...) — the URL path segment for /proposals/:region/...
     quarterSlug: null,
     proposal: null, // the currently loaded, fully-enriched proposal document
     view: 'programmes',
@@ -421,8 +422,10 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
   function signOut() {
     localStorage.removeItem('scg_token');
     localStorage.removeItem('scg_role');
+    localStorage.removeItem('scg_region');
     state.token = null;
     state.role = null;
+    state.region = null;
     boot();
   }
 
@@ -441,26 +444,34 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     const card = el('div', { class: 'login-card' });
     card.appendChild(el('img', { class: 'logo-mark-lg', src: LOGO_SRC, alt: 'INEOS Grenadier' }));
     card.appendChild(el('h1', { text: 'Sales Campaign Generator' }));
-    card.appendChild(el('p', { class: 'tagline', text: 'Enter your regional or admin password to continue' }));
+    card.appendChild(el('p', { class: 'tagline', text: 'Select your region and enter the password to continue' }));
 
     const errorSlot = el('div');
     card.appendChild(errorSlot);
 
     const form = el('form');
+    const regionOptions = ['APAC', 'EUROPE', 'UKI', 'AMERICAS', 'MEA', 'CHINA'];
+    const regionSelect = el('select', {}, [
+      ...regionOptions.map((r) => el('option', { value: r, text: r })),
+      el('option', { value: 'Admin', text: 'Admin' }),
+    ]);
+    form.appendChild(el('div', { class: 'field' }, [el('label', { text: 'Region' }), regionSelect]));
     const input = el('input', { type: 'password', placeholder: 'Password', autofocus: 'true' });
     form.appendChild(el('div', { class: 'field' }, [el('label', { text: 'Password' }), input]));
     form.appendChild(el('button', { class: 'btn-signin', type: 'submit', text: 'Sign In \u2192' }));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        const result = await api('/auth/login', { method: 'POST', body: JSON.stringify({ password: input.value }) });
+        const result = await api('/auth/login', { method: 'POST', body: JSON.stringify({ region: regionSelect.value, password: input.value }) });
         if (!result || !result.token) {
           throw new Error('Sign-in did not return a valid session \u2014 please try again.');
         }
         localStorage.setItem('scg_token', result.token);
         localStorage.setItem('scg_role', result.role);
+        localStorage.setItem('scg_region', result.region || '');
         state.token = result.token;
         state.role = result.role;
+        state.region = result.region || null;
         boot();
       } catch (err) {
         errorSlot.innerHTML = '';
@@ -468,7 +479,6 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       }
     });
     card.appendChild(form);
-    card.appendChild(el('p', { class: 'login-footer', text: 'Every proposal is a JSON file in GitHub \u2014 saved, loaded, and deleted as real commits.' }));
     wrap.appendChild(card);
     return wrap;
   }
@@ -476,16 +486,21 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
   // ---------------- Proposal list + current selection ----------------
   async function loadProposalsList() {
     state.proposalsList = await api('/proposals');
-    const markets = [...new Set(state.proposalsList.map((p) => p.marketCode))];
-    if (!state.marketCode || !markets.includes(state.marketCode)) {
-      state.marketCode = markets[0] || null;
+    if (state.role === 'region') {
+      state.marketCode = state.region; // fixed for the whole session — no picker needed
+    } else {
+      // Admin has no home region — default to whichever region has data, or the first region overall.
+      const regionsWithData = [...new Set(state.proposalsList.map((p) => p.region))];
+      if (!state.marketCode || (regionsWithData.length && !regionsWithData.includes(state.marketCode))) {
+        state.marketCode = regionsWithData[0] || (state.reference.regions[0] ? state.reference.regions[0].region : null);
+      }
     }
     syncQuarterSelection();
     await loadCurrentProposal();
   }
 
   function syncQuarterSelection() {
-    const quarters = state.proposalsList.filter((p) => p.marketCode === state.marketCode).map((p) => p.quarterSlug);
+    const quarters = state.proposalsList.filter((p) => p.region === state.marketCode).map((p) => p.quarterSlug);
     if (!state.quarterSlug || !quarters.includes(state.quarterSlug)) {
       state.quarterSlug = quarters[0] || null;
     }
@@ -501,9 +516,9 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     }
   }
 
-  function marketDisplayName(code) {
-    const ref = state.reference.markets.find((m) => m.code === code);
-    return ref ? ref.market_name : code;
+  function regionDisplayName(regionName) {
+    const ref = state.reference.regions.find((r) => r.region === regionName);
+    return ref ? ref.display_name : regionName;
   }
 
   async function renderAppShell() {
@@ -539,26 +554,31 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       ]));
     }
 
-    const marketsWithData = [...new Set(state.proposalsList.map((p) => p.marketCode))];
     const picker = el('div', { class: 'workspace-picker' });
-    picker.appendChild(el('label', { text: 'Market' }));
-    const marketSelect = el('select', {}, marketsWithData.length
-      ? marketsWithData.map((code) => el('option', { value: code, text: `${marketDisplayName(code)} (${code})`, selected: code === state.marketCode ? 'true' : undefined }))
-      : [el('option', { value: '', text: 'No proposals yet' })]);
-    marketSelect.addEventListener('change', async (e) => {
-      state.marketCode = e.target.value || null;
-      state.quarterSlug = null;
-      syncQuarterSelection();
-      await loadCurrentProposal();
-      rerenderShell();
-    });
-    picker.appendChild(marketSelect);
+
+    if (state.role === 'region') {
+      picker.appendChild(el('label', { text: 'Region' }));
+      picker.appendChild(el('div', { style: 'font-weight:600;font-size:14px;padding:4px 0 8px' }, regionDisplayName(state.region)));
+    } else {
+      const regionsWithData = [...new Set(state.proposalsList.map((p) => p.region))];
+      const regionOptions = regionsWithData.length ? regionsWithData : state.reference.regions.map((r) => r.region);
+      picker.appendChild(el('label', { text: 'Region' }));
+      const regionSelect = el('select', {}, regionOptions.map((r) => el('option', { value: r, text: regionDisplayName(r), selected: r === state.marketCode ? 'true' : undefined })));
+      regionSelect.addEventListener('change', async (e) => {
+        state.marketCode = e.target.value || null;
+        state.quarterSlug = null;
+        syncQuarterSelection();
+        await loadCurrentProposal();
+        rerenderShell();
+      });
+      picker.appendChild(regionSelect);
+    }
 
     picker.appendChild(el('label', { text: 'Quarter' }));
-    const quartersForMarket = state.proposalsList.filter((p) => p.marketCode === state.marketCode).map((p) => p.quarterSlug);
-    const quarterSelect = el('select', {}, quartersForMarket.length
-      ? quartersForMarket.map((slug) => el('option', { value: slug, text: slug.replace(/-/g, ' '), selected: slug === state.quarterSlug ? 'true' : undefined }))
-      : [el('option', { value: '', text: '\u2014' })]);
+    const quartersForRegion = state.proposalsList.filter((p) => p.region === state.marketCode).map((p) => p.quarterSlug);
+    const quarterSelect = el('select', {}, quartersForRegion.length
+      ? quartersForRegion.map((slug) => el('option', { value: slug, text: slug.replace(/-/g, ' '), selected: slug === state.quarterSlug ? 'true' : undefined }))
+      : [el('option', { value: '', text: 'No proposals yet' })]);
     quarterSelect.addEventListener('change', async (e) => {
       state.quarterSlug = e.target.value || null;
       await loadCurrentProposal();
@@ -633,29 +653,33 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
   }
 
   async function onNewProposal() {
-    const codes = state.reference.markets.map((m) => `${m.code} \u2014 ${m.market_name}`).join('\n');
-    const code = prompt(`ISO market code for the new proposal (e.g. GB, IE, US):\n\n${codes}`);
-    if (!code) return;
-    const match = state.reference.markets.find((m) => m.code.toUpperCase() === code.trim().toUpperCase());
-    if (!match) return toast('Unrecognised market code', true);
+    let targetRegion = state.region; // region users always create in their own region
+    if (state.role === 'admin') {
+      const options = state.reference.regions.map((r) => r.region).join(', ');
+      const input = prompt(`Which region is this proposal for?\n\n${options}`, state.marketCode || '');
+      if (!input) return;
+      const match = state.reference.regions.find((r) => r.region.toUpperCase() === input.trim().toUpperCase());
+      if (!match) return toast('Unrecognised region', true);
+      targetRegion = match.region;
+    }
     const label = prompt('Quarter label, e.g. "Q3 2026"');
     if (!label) return;
     try {
-      const created = await api('/proposals', { method: 'POST', body: JSON.stringify({ market_code: match.code, quarter_label: label }) });
-      state.marketCode = created.marketCode;
+      const created = await api('/proposals', { method: 'POST', body: JSON.stringify({ region: targetRegion, quarter_label: label }) });
+      state.marketCode = created.region;
       state.quarterSlug = created.quarterSlug;
       await loadProposalsList();
       rerenderShell();
-      toast(`Proposal created for ${match.market_name} \u2014 saved to GitHub`);
+      toast(`Proposal created for ${regionDisplayName(targetRegion)} \u2014 saved to GitHub`);
     } catch (e) { toast(e.message, true); }
   }
 
   async function onDeleteProposal() {
     if (!state.proposal) return;
-    if (!confirm(`Delete the ${state.proposal.display_name} \u2014 ${state.proposal.quarter_label} proposal? This removes the file from GitHub and can't be undone.`)) return;
+    if (!confirm(`Delete the ${state.proposal.region} \u2014 ${state.proposal.quarter_label} proposal? This removes the file from GitHub and can't be undone.`)) return;
     try {
       await api(`/proposals/${state.marketCode}/${state.quarterSlug}`, { method: 'DELETE' });
-      state.marketCode = null; state.quarterSlug = null; state.proposal = null;
+      state.quarterSlug = null; state.proposal = null;
       await loadProposalsList();
       rerenderShell();
       toast('Proposal deleted');
@@ -1251,7 +1275,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
     proposals.forEach((q) => {
       const card = el('div', { class: 'proposal-card' });
       const info = el('div', { class: 'info' }, [
-        el('span', { class: 'market-line', text: `${q.display_name} (${q.market_code}) \u2014 ${q.quarter_label}` }),
+        el('span', { class: 'market-line', text: `${regionDisplayName(q.region)} \u2014 ${q.quarter_label}` }),
         el('span', { class: `status-pill ${q.status}`, text: q.status.replace('_', ' '), style: 'width:fit-content' }),
       ]);
       const figures = el('div', { class: 'figures' }, [
@@ -1264,7 +1288,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       card.appendChild(figures);
       const openBtn = el('button', { class: 'btn secondary small', type: 'button', text: 'Open' });
       openBtn.addEventListener('click', async () => {
-        state.marketCode = q.market_code;
+        state.marketCode = q.region;
         state.quarterSlug = q.quarter_slug;
         state.view = 'signoff';
         await loadCurrentProposal();
@@ -1273,7 +1297,7 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
       card.appendChild(openBtn);
       if (q.status === 'submitted') {
         const panel = decisionPanel(async () => {
-          state.marketCode = q.market_code;
+          state.marketCode = q.region;
           state.quarterSlug = q.quarter_slug;
           rerenderShell();
         });
