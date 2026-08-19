@@ -49,8 +49,8 @@ body {
 button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
 h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.01em; }
 
-.logo-mark { height: 16px; display: block; }
-.logo-mark-lg { height: 26px; display: block; }
+.logo-mark { height: 18px; width: auto; max-width: 170px; display: block; object-fit: contain; }
+.logo-mark-lg { height: auto; width: 100%; max-width: 220px; display: block; object-fit: contain; }
 
 .login-screen {
   min-height: 100vh;
@@ -353,20 +353,32 @@ const LOGO_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZsAAAAeCAYAAAD6
   };
 
   async function api(path, opts = {}) {
-    const res = await fetch('/api' + path, {
-      headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}) },
-      ...opts,
-    });
+    let res;
+    try {
+      res = await fetch('/api' + path, {
+        headers: { 'Content-Type': 'application/json', ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}) },
+        ...opts,
+      });
+    } catch (networkErr) {
+      throw new Error('Could not reach the server. Check your connection and try again.');
+    }
     if (res.status === 401) {
       signOut();
       throw new Error('Session expired \u2014 please sign in again.');
     }
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `Request failed (${res.status})`);
+    // Read as text first: an empty or non-JSON body (cold-start hiccup, proxy
+    // timeout, a stray HTML error page) must never crash the caller with
+    // "Unexpected end of JSON input" — fall back to a readable message instead.
+    const raw = await res.text().catch(() => '');
+    let body = null;
+    if (raw) {
+      try { body = JSON.parse(raw); } catch (parseErr) { body = null; }
     }
-    if (res.status === 204) return null;
-    return res.json();
+    if (!res.ok) {
+      throw new Error((body && body.error) || `Request failed (${res.status}). ${!raw ? 'The server sent an empty response \u2014 please try again.' : ''}`);
+    }
+    if (res.status === 204 || !raw) return null;
+    return body;
   }
 
   function toast(message, isError = false) {
