@@ -1,0 +1,1273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>INEOS Grenadier — Sales Campaign Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --red: #FF4638;
+  --red-dark: #D93223;
+  --orange: #FB6900;
+  --amber: #FFB805;
+  --green: #009B3B;
+  --tan: #DBB98B;
+  --grey: #7F7D7A;
+  --stone: #D9D6CF;
+  --stone-light: #F4F3F0;
+  --black: #0A0A0A;
+  --white: #FFFFFF;
+
+  --bg: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface-tint: #FAFAF8;
+  --border: #E4E2DC;
+  --border-strong: #C9C6BE;
+  --text: #0A0A0A;
+  --text-muted: #6B6863;
+  --text-faint: #9A968E;
+
+  --font-display: 'Space Grotesk', 'Inter', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.01em; }
+
+.logo-mark { height: 18px; width: auto; max-width: 170px; display: block; object-fit: contain; }
+.logo-mark-lg { height: auto; width: 100%; max-width: 220px; display: block; object-fit: contain; }
+
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-tint);
+  padding: 24px;
+}
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 40px 36px;
+  text-align: center;
+}
+.login-card .logo-mark-lg { margin: 0 auto 28px; }
+.login-card h1 { font-size: 18px; margin: 0 0 6px; font-weight: 600; }
+.login-card p.tagline { color: var(--text-muted); font-size: 13px; margin: 0 0 28px; }
+.login-card .field { text-align: left; margin-bottom: 16px; }
+.login-card label { font-size: 11.5px; color: var(--text-muted); display: block; margin-bottom: 6px; }
+.login-card input[type=password] {
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--white);
+}
+.login-card input[type=password]:focus { outline: 2px solid var(--red); outline-offset: 1px; }
+.login-error {
+  background: rgba(255,70,56,0.08);
+  color: var(--red-dark);
+  border: 1px solid rgba(255,70,56,0.25);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  font-size: 12.5px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+.btn-signin {
+  width: 100%;
+  background: var(--red);
+  color: var(--white);
+  border: none;
+  border-radius: var(--radius);
+  padding: 12px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.btn-signin:hover { background: var(--red-dark); }
+.login-footer { margin-top: 24px; font-size: 11px; color: var(--text-faint); }
+
+.app-shell { display: grid; grid-template-columns: 268px 1fr; min-height: 100vh; }
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.sidebar-header { display: flex; flex-direction: column; gap: 4px; }
+.sidebar-header .role-chip {
+  align-self: flex-start;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 100px;
+  margin-top: 6px;
+}
+.role-chip.region { background: var(--stone-light); color: var(--text-muted); }
+.role-chip.admin { background: rgba(255,70,56,0.1); color: var(--red-dark); }
+
+.workspace-picker { display: flex; flex-direction: column; gap: 4px; }
+.workspace-picker label {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-faint); margin-top: 10px; font-weight: 600;
+}
+.workspace-picker label:first-child { margin-top: 0; }
+.workspace-picker select {
+  background: var(--white);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+.link-btn {
+  background: none; border: none; color: var(--red); text-align: left;
+  padding: 2px 0; cursor: pointer; font-size: 12px; font-weight: 500;
+}
+.link-btn:hover { text-decoration: underline; }
+
+.status-banner {
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.status-banner .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.status-draft { background: var(--stone-light); color: var(--text-muted); }
+.status-draft .dot { background: var(--grey); }
+.status-submitted { background: rgba(255,184,5,0.14); color: #8A6100; }
+.status-submitted .dot { background: var(--amber); }
+.status-approved { background: rgba(0,155,59,0.1); color: var(--green); }
+.status-approved .dot { background: var(--green); }
+.status-rejected { background: rgba(255,70,56,0.1); color: var(--red-dark); }
+.status-rejected .dot { background: var(--red); }
+.status-under_review { background: rgba(251,105,0,0.1); color: #B84E00; }
+.status-under_review .dot { background: var(--orange); }
+
+.main-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.nav-group-label {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-faint); margin: 14px 0 4px; font-weight: 600;
+}
+.nav-group-label:first-child { margin-top: 0; }
+.nav-item {
+  background: none; border: 1px solid transparent; border-radius: var(--radius);
+  color: var(--text-muted); text-align: left; padding: 9px 10px; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 13.5px;
+}
+.nav-item:hover { background: var(--surface-tint); color: var(--text); }
+.nav-item.active { background: rgba(255,70,56,0.08); color: var(--red-dark); font-weight: 600; }
+.nav-item .lock-icon { font-size: 11px; color: var(--text-faint); }
+.nav-item[disabled] { opacity: 0.55; cursor: not-allowed; }
+
+.sidebar-footer { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--text-faint); }
+.signout-btn { background: none; border: none; color: var(--text-faint); cursor: pointer; font-size: 11.5px; text-decoration: underline; }
+
+.content { padding: 34px 44px 70px; max-width: 1180px; }
+.content-header { margin-bottom: 24px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.content-header h1 { margin: 0 0 4px; font-size: 23px; font-weight: 600; }
+.muted { color: var(--text-muted); margin: 0; font-size: 13px; }
+.stage-tag { font-family: var(--font-mono); font-size: 11px; color: var(--red); font-weight: 600; letter-spacing: 0.04em; margin-bottom: 4px; display: block; }
+
+.empty-state { border: 1px dashed var(--border-strong); border-radius: var(--radius); padding: 40px; text-align: center; color: var(--text-muted); }
+.lock-state { border: 1px solid var(--border); background: var(--surface-tint); border-radius: 10px; padding: 32px; text-align: center; }
+.lock-state .lock-emoji { font-size: 28px; margin-bottom: 10px; }
+.lock-state h3 { margin: 0 0 8px; font-size: 16px; }
+.lock-state p { color: var(--text-muted); font-size: 13px; max-width: 440px; margin: 0 auto; }
+
+.api-error-banner {
+  background: rgba(255,70,56,0.06); border: 1px solid rgba(255,70,56,0.25); color: var(--red-dark);
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 20px; font-size: 13px; line-height: 1.6;
+}
+.api-error-banner code { font-family: var(--font-mono); background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 4px; }
+
+.feedback-box {
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 20px; font-size: 13px; border: 1px solid;
+}
+.feedback-box.rejected { background: rgba(255,70,56,0.05); border-color: rgba(255,70,56,0.25); }
+.feedback-box.under_review { background: rgba(251,105,0,0.05); border-color: rgba(251,105,0,0.25); }
+.feedback-box.approved { background: rgba(0,155,59,0.05); border-color: rgba(0,155,59,0.25); }
+.feedback-box strong { display: block; margin-bottom: 4px; }
+
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; margin-bottom: 20px; }
+.panel-title { font-size: 13px; font-weight: 700; margin: 0 0 14px; color: var(--text); }
+.panel-row { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.field label { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
+.field input[type=text], .field input[type=number], .field select, .field textarea {
+  background: var(--white); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  padding: 8px 10px; min-width: 160px;
+}
+.field.wide input, .field.wide select { min-width: 320px; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 16px; }
+.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.chip-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.chip-option {
+  border: 1px solid var(--border-strong); border-radius: 100px; padding: 5px 11px; font-size: 12px;
+  cursor: pointer; background: var(--white); color: var(--text-muted); user-select: none;
+}
+.chip-option.selected { background: var(--red); border-color: var(--red); color: var(--white); }
+
+.btn {
+  background: var(--red); color: var(--white); border: none; border-radius: var(--radius);
+  padding: 9px 16px; font-weight: 600; cursor: pointer; font-size: 13.5px;
+}
+.btn:hover { background: var(--red-dark); }
+.btn:disabled { background: var(--stone); color: var(--text-faint); cursor: not-allowed; }
+.btn.secondary { background: var(--white); color: var(--text); border: 1px solid var(--border-strong); }
+.btn.secondary:hover { background: var(--surface-tint); }
+.btn.success { background: var(--green); }
+.btn.success:hover { background: #007A2E; }
+.btn.warn { background: var(--orange); }
+.btn.warn:hover { background: #D65D00; }
+.btn.danger { background: transparent; color: var(--red); border: 1px solid rgba(255,70,56,0.35); padding: 5px 10px; font-weight: 500; font-size: 12px; }
+.btn.small { padding: 5px 10px; font-size: 12px; }
+
+.model-grid { display: grid; grid-template-columns: 150px repeat(4, 56px); gap: 4px; align-items: center; margin: 6px 0 14px; }
+.model-grid .head { font-size: 10.5px; color: var(--text-faint); text-align: center; }
+.model-grid .row-label { font-size: 12px; color: var(--text-muted); }
+.model-grid input[type=checkbox] { justify-self: center; }
+
+table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data-table th {
+  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-faint); border-bottom: 1px solid var(--border-strong); padding: 8px 10px; white-space: nowrap;
+}
+table.data-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.data-table tr:hover td { background: var(--surface-tint); }
+table.data-table td.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+table.data-table tfoot td { font-weight: 700; border-top: 1px solid var(--border-strong); border-bottom: none; }
+
+.code-chip {
+  font-family: var(--font-mono); font-size: 12px; background: var(--surface-tint);
+  border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; white-space: nowrap;
+}
+.pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 100px; font-size: 11.5px; font-weight: 500; }
+.pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+.pill.cor { background: rgba(127,125,122,0.12); color: var(--grey); }
+.pill.cor .dot { background: var(--grey); }
+.pill.interest { background: rgba(0,155,59,0.1); color: var(--green); }
+.pill.interest .dot { background: var(--green); }
+.pill.marketed { background: rgba(255,184,5,0.16); color: #8A6100; }
+.pill.marketed .dot { background: var(--amber); }
+
+.status-pill { padding: 3px 9px; border-radius: 100px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.status-pill.draft { background: var(--stone-light); color: var(--text-muted); }
+.status-pill.submitted { background: rgba(255,184,5,0.16); color: #8A6100; }
+.status-pill.approved { background: rgba(0,155,59,0.12); color: var(--green); }
+.status-pill.rejected { background: rgba(255,70,56,0.12); color: var(--red-dark); }
+.status-pill.under_review { background: rgba(251,105,0,0.12); color: #B84E00; }
+
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 20px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.stat-card .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); margin-bottom: 6px; font-weight: 600; }
+.stat-card .value { font-family: var(--font-mono); font-size: 21px; font-weight: 700; }
+.stat-card .value.green { color: var(--green); }
+.stat-card .value.red { color: var(--red); }
+.stat-card .value.grey { color: var(--grey); }
+.stat-card .sub { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+
+.toast {
+  position: fixed; right: 20px; bottom: 20px; background: var(--black); color: var(--white);
+  border-radius: var(--radius); padding: 10px 16px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); z-index: 50;
+}
+.toast.err { background: var(--red-dark); }
+
+.row-actions { display: flex; gap: 6px; }
+.section-divider { border: none; border-top: 1px solid var(--border); margin: 22px 0; }
+
+.proposal-card {
+  border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+}
+.proposal-card .info { display: flex; flex-direction: column; gap: 4px; }
+.proposal-card .info .market-line { font-weight: 700; font-size: 14px; }
+.proposal-card .figures { display: flex; gap: 22px; font-size: 12px; color: var(--text-muted); }
+.proposal-card .figures b { color: var(--text); font-family: var(--font-mono); }
+.decision-panel { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 14px; width: 100%; }
+.decision-panel textarea { width: 100%; min-height: 70px; border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 10px; }
+
+@media (max-width: 860px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar { position: relative; height: auto; }
+  .content { padding: 20px; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<template id="toast-template"><div class="toast"></div></template>
+<script>
+const LOGO_SRC = "data:image/png;base64,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";
+(() => {
+  const state = {
+    role: localStorage.getItem('scg_role') || 'region',
+    region: localStorage.getItem('scg_region') || 'UKI', // no login gate right now — see server.js SECTION 0
+    reference: null,
+    proposalsList: [], // [{region, quarterSlug}] — every saved proposal for this session's scope, from GitHub
+    marketCode: null, // holds a region name ("UKI", "EUROPE", ...) — the URL path segment for /proposals/:region/...
+    quarterSlug: null,
+    proposal: null, // the currently loaded, fully-enriched proposal document
+    view: 'programmes',
+  };
+
+  const STAGES = {
+    programmes: { n: 1, title: 'Programme Input', subtitle: 'Cost every programme for the quarter — mark which need a network sales campaign code, which are stackable, and which will be consumer-marketed.' },
+    packages: { n: 2, title: 'Incentive Packages', subtitle: 'Combine up to 5 stackable programmes into a named incentive package.' },
+    campaigns: { n: 3, title: 'Sales Campaign Builder', subtitle: 'Combine a base programme with an incentive package to generate a unique sales campaign code.' },
+    'proposal-summary': { n: 4, title: 'Proposal Summary', subtitle: 'All programmes by channel type and programme type — for approval presentation.' },
+    'campaign-summary': { n: 5, title: 'Campaign Level Summary', subtitle: 'Row-by-row breakdown of every generated campaign code, base and stacked.' },
+    signoff: { n: 6, title: 'QCP Sign-Off Summary', subtitle: 'Budget vs proposal, channel investment, and approval status.' },
+    admin: { n: null, title: 'Proposal Tracker', subtitle: 'Every region\u2019s proposal, stored in GitHub \u2014 approve, reject, or send back for changes.' },
+  };
+
+  async function api(path, opts = {}, _isRetry = false) {
+    let res;
+    try {
+      res = await fetch('/api' + path, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Role': state.role,
+          ...(state.region ? { 'X-Region': state.region } : {}),
+        },
+        ...opts,
+      });
+    } catch (networkErr) {
+      throw new Error('Could not reach the server. Check your connection and try again.');
+    }
+    const raw = await res.text().catch(() => '');
+    let body = null;
+    if (raw) {
+      try { body = JSON.parse(raw); } catch (parseErr) { body = null; }
+    }
+    if (!res.ok) {
+      throw new Error((body && body.error) || `Request failed (${res.status}). ${!raw ? 'The server sent an empty response \u2014 please try again.' : ''}`);
+    }
+    if (res.status === 204) return null;
+    if (!raw) {
+      if (!_isRetry) return api(path, opts, true);
+      throw new Error(`The server returned an empty response (status ${res.status}), even after retrying. Please try again in a moment.`);
+    }
+    return body;
+  }
+
+  function toast(message, isError = false) {
+    const div = document.createElement('div');
+    div.className = 'toast' + (isError ? ' err' : '');
+    div.textContent = message;
+    document.body.appendChild(div);
+    setTimeout(() => div.remove(), 3400);
+  }
+
+  function fmtNum(n, digits = 0) {
+    if (n === null || n === undefined || n === '') return '\u2014';
+    const num = Number(n);
+    if (Number.isNaN(num)) return '\u2014';
+    return num.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  }
+  function fmtEur(n) {
+    if (n === null || n === undefined) return '\u2014';
+    const num = Number(n);
+    return (num < 0 ? '-\u20ac' : '\u20ac') + fmtNum(Math.abs(num), 0);
+  }
+  function fmtMoney(n, currency) { return n === null || n === undefined ? '\u2014' : `${currency || ''} ${fmtNum(n, 0)}`.trim(); }
+  function fmtDate(d) { return d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '\u2014'; }
+
+  function el(tag, attrs = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'text') node.textContent = v;
+      else if (k === 'html') node.innerHTML = v;
+      else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
+      else if (v !== undefined && v !== null) node.setAttribute(k, v);
+    }
+    for (const c of [].concat(children)) {
+      if (c === null || c === undefined) continue;
+      node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return node;
+  }
+
+  function switchContext(role, region) {
+    state.role = role;
+    state.region = region || null;
+    localStorage.setItem('scg_role', role);
+    localStorage.setItem('scg_region', region || '');
+    state.marketCode = null;
+    state.quarterSlug = null;
+    rerenderShell();
+  }
+
+  async function boot() {
+    const root = document.getElementById('root');
+    root.innerHTML = '';
+    root.appendChild(await renderAppShell());
+  }
+
+  // ---------------- Proposal list + current selection ----------------
+  async function loadProposalsList() {
+    state.proposalsList = await api('/proposals');
+    if (state.role === 'region') {
+      state.marketCode = state.region; // fixed for the whole session — no picker needed
+    } else {
+      // Admin has no home region — default to whichever region has data, or the first region overall.
+      const regionsWithData = [...new Set(state.proposalsList.map((p) => p.region))];
+      if (!state.marketCode || (regionsWithData.length && !regionsWithData.includes(state.marketCode))) {
+        state.marketCode = regionsWithData[0] || (state.reference.regions[0] ? state.reference.regions[0].region : null);
+      }
+    }
+    syncQuarterSelection();
+    await loadCurrentProposal();
+  }
+
+  function syncQuarterSelection() {
+    const quarters = state.proposalsList.filter((p) => p.region === state.marketCode).map((p) => p.quarterSlug);
+    if (!state.quarterSlug || !quarters.includes(state.quarterSlug)) {
+      state.quarterSlug = quarters[0] || null;
+    }
+  }
+
+  async function loadCurrentProposal() {
+    if (!state.marketCode || !state.quarterSlug) { state.proposal = null; return; }
+    try {
+      state.proposal = await api(`/proposals/${state.marketCode}/${state.quarterSlug}`);
+    } catch (e) {
+      state.proposal = null;
+      toast(e.message, true);
+    }
+  }
+
+  function regionDisplayName(regionName) {
+    const ref = state.reference.regions.find((r) => r.region === regionName);
+    return ref ? ref.display_name : regionName;
+  }
+
+  async function renderAppShell() {
+    try {
+      state.reference = await api('/reference');
+    } catch (e) {
+      const wrap = el('div', { style: 'padding:60px;max-width:640px;margin:0 auto' });
+      wrap.appendChild(el('div', { class: 'api-error-banner', html: `<strong>Can't reach the server.</strong> ${e.message}` }));
+      return wrap;
+    }
+    await loadProposalsList();
+
+    const shell = el('div', { class: 'app-shell' });
+    shell.appendChild(renderSidebar());
+    const content = el('main', { class: 'content', id: 'content-root' });
+    shell.appendChild(content);
+    renderContent(content);
+    return shell;
+  }
+
+  function renderSidebar() {
+    const sidebar = el('aside', { class: 'sidebar' });
+
+    const header = el('div', { class: 'sidebar-header' }, [
+      el('img', { class: 'logo-mark', src: LOGO_SRC, alt: 'INEOS Grenadier' }),
+      el('span', { class: `role-chip ${state.role}`, text: state.role === 'admin' ? 'Central Admin' : 'Regional User' }),
+    ]);
+    sidebar.appendChild(header);
+
+    if (!state.reference.githubConfigured) {
+      sidebar.appendChild(el('div', { class: 'status-banner status-rejected' }, [
+        el('span', { class: 'dot' }), el('span', { text: 'GitHub storage not configured' }),
+      ]));
+    }
+
+    const picker = el('div', { class: 'workspace-picker' });
+
+    picker.appendChild(el('label', { text: 'Working as' }));
+    const contextOptions = ['UKI', 'EUROPE', 'APAC', 'AMERICAS', 'MEA', 'CHINA', 'Admin'];
+    const currentContext = state.role === 'admin' ? 'Admin' : state.region;
+    const contextSelect = el('select', {}, contextOptions.map((c) => el('option', { value: c, text: c === 'Admin' ? 'Admin' : regionDisplayName(c), selected: c === currentContext ? 'true' : undefined })));
+    contextSelect.addEventListener('change', (e) => {
+      const v = e.target.value;
+      switchContext(v === 'Admin' ? 'admin' : 'region', v === 'Admin' ? null : v);
+    });
+    picker.appendChild(contextSelect);
+    picker.appendChild(el('p', { class: 'muted', style: 'margin:4px 0 0;font-size:11px', text: 'No login right now \u2014 switch freely while auth is being sorted out.' }));
+
+    if (state.role === 'admin') {
+      const regionsWithData = [...new Set(state.proposalsList.map((p) => p.region))];
+      const regionOptions = regionsWithData.length ? regionsWithData : state.reference.regions.map((r) => r.region);
+      picker.appendChild(el('label', { text: 'Browsing region' }));
+      const regionSelect = el('select', {}, regionOptions.map((r) => el('option', { value: r, text: regionDisplayName(r), selected: r === state.marketCode ? 'true' : undefined })));
+      regionSelect.addEventListener('change', async (e) => {
+        state.marketCode = e.target.value || null;
+        state.quarterSlug = null;
+        syncQuarterSelection();
+        await loadCurrentProposal();
+        rerenderShell();
+      });
+      picker.appendChild(regionSelect);
+    }
+
+    picker.appendChild(el('label', { text: 'Quarter' }));
+    const quartersForRegion = state.proposalsList.filter((p) => p.region === state.marketCode).map((p) => p.quarterSlug);
+    const quarterSelect = el('select', {}, quartersForRegion.length
+      ? quartersForRegion.map((slug) => el('option', { value: slug, text: slug.replace(/-/g, ' '), selected: slug === state.quarterSlug ? 'true' : undefined }))
+      : [el('option', { value: '', text: 'No proposals yet' })]);
+    quarterSelect.addEventListener('change', async (e) => {
+      state.quarterSlug = e.target.value || null;
+      await loadCurrentProposal();
+      rerenderShell();
+    });
+    picker.appendChild(quarterSelect);
+
+    picker.appendChild(el('button', { class: 'link-btn', type: 'button', text: '+ New proposal', onclick: onNewProposal }));
+    if (state.proposal) {
+      picker.appendChild(el('button', { class: 'link-btn', type: 'button', style: 'color:var(--red-dark)', text: '\u2715 Delete this proposal', onclick: onDeleteProposal }));
+    }
+    sidebar.appendChild(picker);
+
+    if (state.proposal) {
+      sidebar.appendChild(statusBanner(state.proposal.status));
+    }
+
+    const nav = el('nav', { class: 'main-nav' });
+    const locked = !state.proposal || state.proposal.status !== 'approved';
+
+    nav.appendChild(el('div', { class: 'nav-group-label', text: 'Proposal' }));
+    nav.appendChild(navItem('programmes', '1. Programme Input'));
+    nav.appendChild(navItem('signoff', '6. Budget & Sign-Off'));
+
+    nav.appendChild(el('div', { class: 'nav-group-label', text: 'Campaign Build' }));
+    nav.appendChild(navItem('packages', '2. Incentive Packages', locked));
+    nav.appendChild(navItem('campaigns', '3. Sales Campaign Builder', locked));
+
+    nav.appendChild(el('div', { class: 'nav-group-label', text: 'Reporting' }));
+    nav.appendChild(navItem('proposal-summary', '4. Proposal Summary'));
+    nav.appendChild(navItem('campaign-summary', '5. Campaign Level Summary'));
+
+    if (state.role === 'admin') {
+      nav.appendChild(el('div', { class: 'nav-group-label', text: 'Admin' }));
+      nav.appendChild(navItem('admin', 'Proposal Tracker'));
+    }
+    sidebar.appendChild(nav);
+
+    sidebar.appendChild(el('div', { class: 'sidebar-footer' }, [
+      el('span', { text: 'No login gate right now' }),
+    ]));
+
+    return sidebar;
+  }
+
+  function navItem(view, label, isLocked) {
+    return el('button', {
+      class: 'nav-item' + (state.view === view ? ' active' : ''),
+      type: 'button',
+      onclick: () => { state.view = view; rerenderShell(); },
+    }, [el('span', { text: label }), isLocked ? el('span', { class: 'lock-icon', text: '\u{1F512}' }) : null]);
+  }
+
+  function statusBanner(status) {
+    const labels = { draft: 'Draft \u2014 not yet submitted', submitted: 'Submitted \u2014 awaiting decision', approved: 'Approved \u2014 build unlocked', rejected: 'Rejected \u2014 needs changes', under_review: 'Under review \u2014 see feedback' };
+    return el('div', { class: `status-banner status-${status}` }, [el('span', { class: 'dot' }), el('span', { text: labels[status] || status })]);
+  }
+
+  async function rerenderShell() {
+    const root = document.getElementById('root');
+    root.innerHTML = '';
+    root.appendChild(await renderAppShell());
+  }
+
+  // Re-fetches the current proposal and re-renders the active view in place
+  // (used after every mutation, since every mutation already returns the
+  // fresh document too — but re-fetching keeps this one code path simple).
+  async function refreshAndRerender() {
+    await loadCurrentProposal();
+    renderContent(document.getElementById('content-root'));
+  }
+
+  async function onNewProposal() {
+    let targetRegion = state.region; // region users always create in their own region
+    if (state.role === 'admin') {
+      const options = state.reference.regions.map((r) => r.region).join(', ');
+      const input = prompt(`Which region is this proposal for?\n\n${options}`, state.marketCode || '');
+      if (!input) return;
+      const match = state.reference.regions.find((r) => r.region.toUpperCase() === input.trim().toUpperCase());
+      if (!match) return toast('Unrecognised region', true);
+      targetRegion = match.region;
+    }
+    const label = prompt('Quarter label, e.g. "Q3 2026"');
+    if (!label) return;
+    try {
+      const created = await api('/proposals', { method: 'POST', body: JSON.stringify({ region: targetRegion, quarter_label: label }) });
+      state.marketCode = created.region;
+      state.quarterSlug = created.quarterSlug;
+      await loadProposalsList();
+      rerenderShell();
+      toast(`Proposal created for ${regionDisplayName(targetRegion)} \u2014 saved to GitHub`);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function onDeleteProposal() {
+    if (!state.proposal) return;
+    if (!confirm(`Delete the ${state.proposal.region} \u2014 ${state.proposal.quarter_label} proposal? This removes the file from GitHub and can't be undone.`)) return;
+    try {
+      await api(`/proposals/${state.marketCode}/${state.quarterSlug}`, { method: 'DELETE' });
+      state.quarterSlug = null; state.proposal = null;
+      await loadProposalsList();
+      rerenderShell();
+      toast('Proposal deleted');
+    } catch (e) { toast(e.message, true); }
+  }
+
+  function renderContent(content) {
+    content.innerHTML = '';
+    const meta = STAGES[state.view];
+    const header = el('div', { class: 'content-header' });
+    const left = el('div');
+    if (meta.n) left.appendChild(el('span', { class: 'stage-tag', text: `STAGE ${meta.n}` }));
+    left.appendChild(el('h1', { text: meta.title }));
+    left.appendChild(el('p', { class: 'muted', text: meta.subtitle }));
+    header.appendChild(left);
+    content.appendChild(header);
+
+    if (!state.proposal && state.view !== 'admin') {
+      content.appendChild(el('div', { class: 'empty-state', text: 'Pick an existing proposal on the left, or click "+ New proposal" to start one.' }));
+      return;
+    }
+
+    const renderers = {
+      programmes: renderProgrammes,
+      packages: renderPackages,
+      campaigns: renderCampaigns,
+      'proposal-summary': renderProposalSummary,
+      'campaign-summary': renderCampaignSummary,
+      signoff: renderSignoff,
+      admin: renderAdmin,
+    };
+    renderers[state.view](content).catch((e) => {
+      content.appendChild(el('div', { class: 'empty-state', text: 'Error: ' + e.message }));
+    });
+  }
+
+  function field(labelText, inputEl, wide) {
+    return el('div', { class: 'field' + (wide ? ' wide' : '') }, [el('label', { text: labelText }), inputEl]);
+  }
+
+  function lockedState(message) {
+    const div = el('div', { class: 'lock-state' });
+    div.appendChild(el('div', { class: 'lock-emoji', text: '\u{1F512}' }));
+    div.appendChild(el('h3', { text: 'Locked until the proposal is approved' }));
+    div.appendChild(el('p', { text: message || 'Submit Programme Input and Budget for approval on Stage 6. Once a central admin approves the proposal, incentive packages and sales campaign codes unlock here.' }));
+    return div;
+  }
+
+  // ---------------- Stage 1: Programme Input ----------------
+  async function renderProgrammes(root) {
+    const p = state.proposal;
+    const editable = ['draft', 'rejected', 'under_review'].includes(p.status) || state.role === 'admin';
+
+    if (p.status === 'rejected' && p.feedback) {
+      root.appendChild(el('div', { class: 'feedback-box rejected' }, [el('strong', { text: 'Rejected \u2014 admin feedback' }), el('span', { text: p.feedback })]));
+    } else if (p.status === 'under_review' && p.feedback) {
+      root.appendChild(el('div', { class: 'feedback-box under_review' }, [el('strong', { text: 'Sent back for changes' }), el('span', { text: p.feedback })]));
+    }
+
+    if (!editable) {
+      root.appendChild(el('div', { class: 'panel' }, [
+        el('p', { class: 'muted', text: p.status === 'submitted'
+          ? 'This proposal is submitted and awaiting an admin decision \u2014 Programme Input is locked until then.'
+          : 'This proposal is approved. Programme Input is now locked so the numbers a decision was made against can\u2019t drift \u2014 packages and campaigns are being built from this data instead.' }),
+      ]));
+    } else {
+      root.appendChild(programmeForm());
+    }
+    root.appendChild(el('hr', { class: 'section-divider' }));
+
+    const table = el('table', { class: 'data-table' }, [
+      el('thead', {}, el('tr', {}, [
+        el('th', { text: 'Code' }), el('th', { text: 'Title' }), el('th', { text: 'Type' }),
+        el('th', { text: 'Alignment' }), el('th', { text: 'Channel' }), el('th', { text: 'Marketed' }), el('th', { text: 'Volume' }),
+        el('th', { text: 'Cost P.U.' }), el('th', { text: 'Total (EUR)' }), editable ? el('th', { text: '' }) : null,
+      ])),
+    ]);
+    const tbody = el('tbody');
+    p.programmes.forEach((prog) => {
+      tbody.appendChild(el('tr', {}, [
+        el('td', {}, el('span', { class: 'code-chip', text: prog.programme_code })),
+        el('td', { text: prog.title }),
+        el('td', { text: prog.programme_type }),
+        el('td', {}, alignmentPill(prog.budget_alignment)),
+        el('td', { text: prog.channel_type }),
+        el('td', {}, prog.marketed ? el('span', { class: 'pill marketed' }, [el('span', { class: 'dot' }), el('span', { text: (prog.marketing_channels || []).join(', ') || 'Yes' })]) : el('span', { class: 'muted', text: '\u2014' })),
+        el('td', { class: 'num', text: fmtNum(prog.activation_volume) }),
+        el('td', { class: 'num', text: fmtMoney(prog.local_cost_pu, prog.currency) }),
+        el('td', { class: 'num', text: fmtEur(prog.total_cost_eur) }),
+        editable ? el('td', {}, el('button', { class: 'btn danger', text: 'Delete', onclick: async () => {
+          if (!confirm('Delete this programme?')) return;
+          try { await api(`/proposals/${state.marketCode}/${state.quarterSlug}/programmes/${prog.id}`, { method: 'DELETE' }); await refreshAndRerender(); toast('Deleted'); }
+          catch (e) { toast(e.message, true); }
+        } })) : null,
+      ]));
+    });
+    table.appendChild(tbody);
+    root.appendChild(table);
+  }
+
+  function alignmentPill(alignment) {
+    const isCor = alignment === 'CoR (VIE)';
+    return el('span', { class: `pill ${isCor ? 'cor' : 'interest'}` }, [el('span', { class: 'dot' }), el('span', { text: alignment })]);
+  }
+
+  function programmeForm() {
+    const ref = state.reference;
+    const panel = el('div', { class: 'panel' }, [el('div', { class: 'panel-title', text: 'Add a programme' })]);
+    const form = el('form');
+
+    const title = el('input', { type: 'text', placeholder: 'e.g. MY24 5-Seat Utility Wagon \u00a32,500 FDA/Cash Support', required: 'true' });
+    const type = el('select', {}, ref.programmeTypes.map((t) => el('option', { value: t.name, text: t.name })));
+    const currency = el('select', {}, ref.currencies.map((c) => el('option', { value: c.code, text: c.code, selected: c.code === 'GBP' ? 'true' : undefined })));
+    const costPu = el('input', { type: 'number', step: 'any', value: '0' });
+    const volume = el('input', { type: 'number', step: 'any', value: '0' });
+    const codeRequired = el('input', { type: 'checkbox', checked: 'true' });
+    const stackable = el('input', { type: 'checkbox' });
+    const marketed = el('input', { type: 'checkbox' });
+    const payoutMethod = el('select', {}, ['Discount On Invoice', 'Credit Note', 'Fixed Margin %', 'Interest/Subvention'].map((p) => el('option', { value: p, text: p })));
+
+    form.appendChild(el('div', { class: 'form-grid' }, [
+      field('Programme title', title, true),
+      field('Primary programme type', type),
+      field('Currency', currency),
+      field('Local incentive cost P.U.', costPu),
+      field('Activation volume', volume),
+      field('Payout method', payoutMethod),
+    ]));
+    form.appendChild(el('div', { class: 'panel-row' }, [
+      el('label', { class: 'checkbox-row' }, [codeRequired, el('span', { text: 'Controlled via a network sales campaign code (uncheck for back-end programmes, e.g. bonus/accrual)' })]),
+    ]));
+    form.appendChild(el('div', { class: 'panel-row', style: 'margin-top:8px' }, [
+      el('label', { class: 'checkbox-row' }, [stackable, el('span', { text: 'Stackable into an incentive package?' })]),
+    ]));
+    form.appendChild(el('div', { class: 'panel-row', style: 'margin-top:8px' }, [
+      el('label', { class: 'checkbox-row' }, [marketed, el('span', { text: 'Will this programme be consumer-marketed?' })]),
+    ]));
+
+    const channelPicker = el('div', { class: 'chip-picker' });
+    const selectedChannels = new Set();
+    ref.marketingChannels.forEach((ch) => {
+      const chip = el('span', { class: 'chip-option', text: ch });
+      chip.addEventListener('click', () => {
+        if (selectedChannels.has(ch)) { selectedChannels.delete(ch); chip.classList.remove('selected'); }
+        else { selectedChannels.add(ch); chip.classList.add('selected'); }
+      });
+      channelPicker.appendChild(chip);
+    });
+    const channelField = field('Marketing channels', channelPicker, true);
+    channelField.style.display = 'none';
+    marketed.addEventListener('change', () => { channelField.style.display = marketed.checked ? '' : 'none'; });
+    form.appendChild(channelField);
+
+    form.appendChild(el('div', { class: 'panel-title', text: 'Model-year eligibility', style: 'margin-top:16px' }));
+    const grid = el('div', { class: 'model-grid' });
+    grid.appendChild(el('div', {}));
+    ref.modelYears.forEach((y) => grid.appendChild(el('div', { class: 'head', text: y })));
+    const checkboxes = {};
+    ref.modelGroups.forEach((g) => {
+      grid.appendChild(el('div', { class: 'row-label', text: g.model_name }));
+      checkboxes[g.code] = ref.modelYears.map(() => {
+        const cb = el('input', { type: 'checkbox' });
+        grid.appendChild(cb);
+        return cb;
+      });
+    });
+    form.appendChild(grid);
+
+    form.appendChild(el('button', { class: 'btn', type: 'submit', text: 'Add programme' }));
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const model_eligibility = {};
+      ref.modelGroups.forEach((g) => {
+        const years = checkboxes[g.code].map((cb, i) => (cb.checked ? ref.modelYears[i] : null)).filter(Boolean);
+        if (years.length) model_eligibility[g.code] = years;
+      });
+      try {
+        await api(`/proposals/${state.marketCode}/${state.quarterSlug}/programmes`, {
+          method: 'POST',
+          body: JSON.stringify({
+            title: title.value, programme_type: type.value, currency: currency.value,
+            local_cost_pu: Number(costPu.value), activation_volume: Number(volume.value),
+            code_required: codeRequired.checked, stackable: stackable.checked,
+            payout_method: payoutMethod.value, model_eligibility,
+            marketed: marketed.checked, marketing_channels: Array.from(selectedChannels),
+          }),
+        });
+        toast('Programme added \u2014 saved to GitHub');
+        await refreshAndRerender();
+      } catch (err) { toast(err.message, true); }
+    });
+
+    panel.appendChild(form);
+    return panel;
+  }
+
+  // ---------------- Stage 2: Incentive Packages ----------------
+  async function renderPackages(root) {
+    const p = state.proposal;
+    if (!(p.status === 'approved' || state.role === 'admin')) {
+      root.appendChild(lockedState());
+      return;
+    }
+    const stackableProgrammes = p.programmes.filter((pr) => pr.stackable);
+
+    const panel = el('div', { class: 'panel' }, [el('div', { class: 'panel-title', text: 'Build an incentive package (up to 5 stackable programmes)' })]);
+    if (!stackableProgrammes.length) {
+      panel.appendChild(el('p', { class: 'muted', text: 'No stackable programmes yet \u2014 mark a programme as "stackable" in Programme Input first.' }));
+    } else {
+      const list = el('div', {});
+      const checks = stackableProgrammes.map((pr) => {
+        const cb = el('input', { type: 'checkbox', value: pr.id });
+        list.appendChild(el('label', { class: 'checkbox-row', style: 'margin-bottom:6px' }, [cb, el('span', { text: `${pr.title} (${pr.currency} ${fmtNum(pr.local_cost_pu)})` })]));
+        return { cb, id: pr.id };
+      });
+      panel.appendChild(list);
+      const addBtn = el('button', { class: 'btn', text: 'Create package from selected' });
+      addBtn.addEventListener('click', async () => {
+        const ids = checks.filter((c) => c.cb.checked).map((c) => c.id);
+        if (ids.length < 2 || ids.length > 5) return toast('Select between 2 and 5 programmes', true);
+        try {
+          await api(`/proposals/${state.marketCode}/${state.quarterSlug}/packages`, { method: 'POST', body: JSON.stringify({ programme_ids: ids }) });
+          toast('Package created \u2014 saved to GitHub');
+          await refreshAndRerender();
+        } catch (e) { toast(e.message, true); }
+      });
+      panel.appendChild(addBtn);
+    }
+    root.appendChild(panel);
+    root.appendChild(el('hr', { class: 'section-divider' }));
+
+    const table = el('table', { class: 'data-table' }, [
+      el('thead', {}, el('tr', {}, [
+        el('th', { text: 'Package name' }), el('th', { text: 'CoR (VIE) Cost P.U.' }),
+        el('th', { text: 'Interest/Subvention Cost P.U.' }), el('th', { text: 'Total Cost P.U.' }), el('th', { text: '' }),
+      ])),
+    ]);
+    const tbody = el('tbody');
+    p.incentive_packages.forEach((pkg) => {
+      tbody.appendChild(el('tr', {}, [
+        el('td', { text: pkg.name }),
+        el('td', { class: 'num', text: fmtNum(pkg.cor_cost_pu) }),
+        el('td', { class: 'num', text: fmtNum(pkg.interest_cost_pu) }),
+        el('td', { class: 'num', text: fmtNum(pkg.total_cost_pu) }),
+        el('td', {}, el('button', { class: 'btn danger', text: 'Delete', onclick: async () => {
+          if (!confirm('Delete this package?')) return;
+          await api(`/proposals/${state.marketCode}/${state.quarterSlug}/packages/${pkg.id}`, { method: 'DELETE' });
+          await refreshAndRerender();
+        } })),
+      ]));
+    });
+    table.appendChild(tbody);
+    root.appendChild(table);
+  }
+
+  // ---------------- Stage 3: Sales Campaign Builder ----------------
+  async function renderCampaigns(root) {
+    const p = state.proposal;
+    if (!(p.status === 'approved' || state.role === 'admin')) {
+      root.appendChild(lockedState());
+      return;
+    }
+    const baseProgrammes = p.programmes.filter((pr) => pr.code_required && pr.programme_code !== 'No Code Required');
+
+    const panel = el('div', { class: 'panel' }, [el('div', { class: 'panel-title', text: 'Build a sales campaign' })]);
+    const form = el('form');
+    const base = el('select', {}, baseProgrammes.map((pr) => el('option', { value: pr.id, text: `${pr.programme_code} \u2014 ${pr.title}` })));
+    const pkg = el('select', {}, [el('option', { value: '', text: '(none \u2014 base programme only)' }), ...p.incentive_packages.map((pk) => el('option', { value: pk.id, text: pk.name }))]);
+    const volume = el('input', { type: 'number', step: 'any', placeholder: 'defaults to base programme volume' });
+    form.appendChild(el('div', { class: 'form-grid' }, [
+      field('Base programme', base),
+      field('Incentive package (optional)', pkg),
+      field('Forecast volume override', volume),
+    ]));
+    form.appendChild(el('button', { class: 'btn', type: 'submit', text: 'Add campaign' }));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!base.value) return toast('Add a code-required programme first', true);
+      try {
+        await api(`/proposals/${state.marketCode}/${state.quarterSlug}/campaigns`, {
+          method: 'POST',
+          body: JSON.stringify({
+            base_programme_id: Number(base.value),
+            incentive_package_id: pkg.value ? Number(pkg.value) : null,
+            forecast_volume: volume.value ? Number(volume.value) : null,
+          }),
+        });
+        toast('Campaign added \u2014 saved to GitHub');
+        await refreshAndRerender();
+      } catch (err) { toast(err.message, true); }
+    });
+    panel.appendChild(form);
+    root.appendChild(panel);
+    root.appendChild(el('hr', { class: 'section-divider' }));
+
+    const table = el('table', { class: 'data-table' }, [
+      el('thead', {}, el('tr', {}, [
+        el('th', { text: 'Code' }), el('th', { text: 'Title' }), el('th', { text: 'Alignment' }),
+        el('th', { text: 'Volume' }), el('th', { text: 'Cost P.U. (EUR)' }), el('th', { text: 'Total (EUR)' }), el('th', { text: '' }),
+      ])),
+    ]);
+    const tbody = el('tbody');
+    p.sales_campaigns.forEach((c) => {
+      tbody.appendChild(el('tr', {}, [
+        el('td', {}, el('span', { class: 'code-chip', text: c.campaign_code })),
+        el('td', { text: c.campaign_title }),
+        el('td', {}, alignmentPill(c.budget_alignment)),
+        el('td', { class: 'num', text: fmtNum(c.forecast_volume) }),
+        el('td', { class: 'num', text: fmtEur(c.cost_pu_eur) }),
+        el('td', { class: 'num', text: fmtEur(c.total_cost_eur) }),
+        el('td', {}, el('button', { class: 'btn danger', text: 'Delete', onclick: async () => {
+          if (!confirm('Delete this campaign?')) return;
+          await api(`/proposals/${state.marketCode}/${state.quarterSlug}/campaigns/${c.id}`, { method: 'DELETE' });
+          await refreshAndRerender();
+        } })),
+      ]));
+    });
+    table.appendChild(tbody);
+    root.appendChild(table);
+  }
+
+  // ---------------- Stage 4: Proposal Summary ----------------
+  async function renderProposalSummary(root) {
+    const summary = state.proposal.programme_summary;
+
+    const exportRow = el('div', { style: 'margin-bottom:18px' });
+    exportRow.appendChild(downloadButton('\u2b07 Download Ingest_Programme_Export.xlsx', `/proposals/${state.marketCode}/${state.quarterSlug}/exports/programmes`));
+    root.appendChild(exportRow);
+
+    root.appendChild(el('div', { class: 'stat-row' }, [
+      statCard('Total activation volume', fmtNum(summary.totals.activation_volume)),
+      statCard('Total programme cost', fmtEur(summary.totals.total_cost_eur)),
+    ]));
+
+    root.appendChild(el('div', { class: 'panel-title', text: 'By channel type' }));
+    root.appendChild(simpleTable(
+      ['Channel type', 'Volume', 'Total cost (EUR)'],
+      summary.byChannel.map((c) => [c.channel_type, fmtNum(c.activation_volume), fmtEur(c.total_cost_eur)])
+    ));
+
+    root.appendChild(el('hr', { class: 'section-divider' }));
+    root.appendChild(el('div', { class: 'panel-title', text: 'By programme type' }));
+    root.appendChild(simpleTable(
+      ['Programme type', 'Volume', 'Total cost (EUR)'],
+      summary.byProgrammeType.map((c) => [c.programme_type, fmtNum(c.activation_volume), fmtEur(c.total_cost_eur)])
+    ));
+
+    root.appendChild(el('hr', { class: 'section-divider' }));
+    root.appendChild(el('div', { class: 'panel-title', text: 'By programme' }));
+    root.appendChild(simpleTable(
+      ['Code', 'Title', 'Type', 'Channel', 'Alignment', 'Volume', 'Cost P.U.', 'Cost P.U. (EUR)', 'Total (EUR)'],
+      summary.rows.map((r) => [
+        codeChip(r.programme_code), r.title, r.programme_type, r.channel_type,
+        alignmentPill(r.budget_alignment), fmtNum(r.activation_volume),
+        fmtMoney(r.local_cost_pu, r.currency), fmtEur(r.eur_cost_pu), fmtEur(r.total_cost_eur),
+      ])
+    ));
+  }
+
+  // ---------------- Stage 5: Campaign Level Summary ----------------
+  async function renderCampaignSummary(root) {
+    const summary = state.proposal.campaign_summary;
+
+    const exportRow = el('div', { style: 'margin-bottom:18px' });
+    exportRow.appendChild(downloadButton('\u2b07 Download Ingest_Code_Export.xlsx', `/proposals/${state.marketCode}/${state.quarterSlug}/exports/codes`));
+    root.appendChild(exportRow);
+
+    if (!summary.rows.length) {
+      root.appendChild(el('div', { class: 'empty-state', text: 'No sales campaigns yet \u2014 build them in Stage 3 once the proposal is approved.' }));
+      return;
+    }
+
+    root.appendChild(el('div', { class: 'stat-row' }, [
+      statCard('Total forecast volume', fmtNum(summary.totals.forecast_volume)),
+      statCard('Total campaign cost', fmtEur(summary.totals.total_cost_eur)),
+    ]));
+    root.appendChild(simpleTable(
+      ['Code', 'Title', 'Alignment', 'Volume', 'Cost P.U. (EUR)', 'Total (EUR)'],
+      summary.rows.map((r) => [
+        codeChip(r.campaign_code), r.campaign_title, alignmentPill(r.budget_alignment),
+        fmtNum(r.forecast_volume), fmtEur(r.cost_pu_eur), fmtEur(r.total_cost_eur),
+      ])
+    ));
+  }
+
+  function downloadButton(label, path) {
+    const btn = el('button', { class: 'btn secondary small', type: 'button', text: label });
+    btn.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api' + path, { headers: { 'X-Role': state.role, ...(state.region ? { 'X-Region': state.region } : {}) } });
+        if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.error || 'Download failed'); }
+        const blob = await res.blob();
+        const disposition = res.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="?([^"]+)"?/);
+        const filename = match ? match[1] : 'download';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) { toast(e.message, true); }
+    });
+    return btn;
+  }
+
+  function statCard(label, value, tone) {
+    return el('div', { class: 'stat-card' }, [
+      el('div', { class: 'label', text: label }),
+      el('div', { class: 'value' + (tone ? ' ' + tone : ''), text: String(value) }),
+    ]);
+  }
+  function codeChip(text) { return el('span', { class: 'code-chip', text }); }
+
+  function simpleTable(headers, rows) {
+    const table = el('table', { class: 'data-table' }, [el('thead', {}, el('tr', {}, headers.map((h) => el('th', { text: h }))))]);
+    const tbody = el('tbody');
+    rows.forEach((row) => {
+      tbody.appendChild(el('tr', {}, row.map((cell) => {
+        const td = el('td');
+        if (cell instanceof Node) td.appendChild(cell);
+        else { td.textContent = cell; td.className = typeof cell === 'string' && /^-?[\u20ac\d]/.test(cell) ? 'num' : ''; }
+        return td;
+      })));
+    });
+    table.appendChild(tbody);
+    return table;
+  }
+
+  // ---------------- Stage 6: Budget & QCP Sign-Off Summary ----------------
+  async function renderSignoff(root) {
+    const p = state.proposal;
+    const editable = ['draft', 'rejected', 'under_review'].includes(p.status) || state.role === 'admin';
+
+    if (p.status === 'rejected' && p.feedback) {
+      root.appendChild(el('div', { class: 'feedback-box rejected' }, [el('strong', { text: 'Rejected \u2014 admin feedback' }), el('span', { text: p.feedback })]));
+    } else if (p.status === 'under_review' && p.feedback) {
+      root.appendChild(el('div', { class: 'feedback-box under_review' }, [el('strong', { text: 'Sent back for changes' }), el('span', { text: p.feedback })]));
+    } else if (p.status === 'approved' && p.feedback) {
+      root.appendChild(el('div', { class: 'feedback-box approved' }, [el('strong', { text: 'Approved' }), el('span', { text: p.feedback })]));
+    }
+
+    const actionRow = el('div', { class: 'panel-row', style: 'margin-bottom:20px' });
+    actionRow.appendChild(downloadPdfButton());
+    if (state.role === 'region' && ['draft', 'rejected', 'under_review'].includes(p.status)) {
+      const submitBtn = el('button', { class: 'btn success', type: 'button', text: p.status === 'draft' ? 'Submit for Approval' : 'Resubmit for Approval' });
+      submitBtn.addEventListener('click', async () => {
+        try {
+          await api(`/proposals/${state.marketCode}/${state.quarterSlug}/submit`, { method: 'POST' });
+          toast('Submitted for approval');
+          await loadCurrentProposal();
+          rerenderShell();
+        } catch (e) { toast(e.message, true); }
+      });
+      actionRow.appendChild(submitBtn);
+    }
+    root.appendChild(actionRow);
+
+    if (state.role === 'admin' && p.status === 'submitted') {
+      root.appendChild(decisionPanel(async () => { await loadCurrentProposal(); rerenderShell(); }));
+    }
+
+    root.appendChild(el('div', { class: 'panel-title', text: 'Monthly Cost-of-Retail budget (EUR) \u2014 free-typed' }));
+    root.appendChild(budgetPanel(editable));
+    root.appendChild(el('hr', { class: 'section-divider' }));
+
+    const s = p.qcp_summary;
+    root.appendChild(el('div', { class: 'panel-title', text: `${s.market} \u2014 ${s.quarterLabel} Budget Summary` }));
+    root.appendChild(simpleTable(
+      ['Month', 'CoR Volume', 'CoR P.U. Budget (EUR)', 'CoR Total Budget (EUR)'],
+      s.budget.map((m) => [m.month_label, fmtNum(m.cor_volume), fmtEur(m.cor_cost_pu_eur), fmtEur(m.cor_total_eur)])
+        .concat([['Quarter total', fmtNum(s.quarterBudget.cor_volume), '', fmtEur(s.quarterBudget.cor_total_eur)]])
+    ));
+
+    root.appendChild(el('hr', { class: 'section-divider' }));
+    root.appendChild(el('div', { class: 'panel-title', text: 'Sign-Off Summary (Request)' }));
+    root.appendChild(el('div', { class: 'stat-row' }, [
+      statCard('Total CoR (VIE) proposal', fmtEur(s.corProposalEur)),
+      statCard('CoR (VIE) variance to budget', fmtEur(s.corVariance), s.corVariance > 0 ? 'red' : 'green'),
+      statCard('Total Interest/Subvention proposal', fmtEur(s.interestProposalEur)),
+      statCard('Interest/Subvention variance', s.interestVariance === null ? '\u2014' : fmtEur(s.interestVariance), s.interestVariance > 0 ? 'red' : 'green'),
+    ]));
+    root.appendChild(el('div', { class: 'panel-row' }, [
+      statusPill('CoR (VIE) approval status', s.corApprovalStatus),
+      statusPill('Interest/Subvention approval status', s.interestApprovalStatus),
+    ]));
+
+    root.appendChild(el('hr', { class: 'section-divider' }));
+    root.appendChild(el('div', { class: 'panel-title', text: 'CoR (VIE) Dissection by channel type' }));
+    root.appendChild(simpleTable(
+      ['Channel type', 'Weighted cost P.U. (EUR)', 'Volume', 'Total proposal cost (EUR)'],
+      s.corDissection.map((c) => [c.channel_type, fmtEur(c.weighted_cost_pu_eur), fmtNum(c.volume), fmtEur(c.total_cost_eur)])
+    ));
+  }
+
+  function budgetPanel(editable) {
+    const months = state.proposal.budget_months;
+    const panel = el('div', { class: 'panel' });
+    const table = el('table', { class: 'data-table' }, [
+      el('thead', {}, el('tr', {}, [
+        el('th', { text: 'Month' }), el('th', { text: 'CoR (New Vehicle) Volume' }),
+        el('th', { text: 'CoR (VIE) P.U. Budget (EUR)' }), el('th', { text: 'CoR (VIE) Total Budget (EUR)' }),
+        el('th', { text: 'Interest/Subvention Budget (EUR)' }),
+      ])),
+    ]);
+    const tbody = el('tbody');
+    months.forEach((m) => {
+      const total = (Number(m.cor_volume) || 0) * (Number(m.cor_cost_pu_eur) || 0);
+      const saveBudget = async (patch) => {
+        try {
+          await api(`/proposals/${state.marketCode}/${state.quarterSlug}/budget/${m.month_order}`, { method: 'PUT', body: JSON.stringify(patch) });
+          toast('Saved to GitHub');
+          await loadCurrentProposal();
+        } catch (e) { toast(e.message, true); }
+      };
+      if (editable) {
+        const labelInput = el('input', { type: 'text', value: m.month_label });
+        labelInput.addEventListener('change', () => saveBudget({ month_label: labelInput.value }));
+        const volInput = el('input', { type: 'number', step: 'any', value: m.cor_volume, style: 'width:100px' });
+        volInput.addEventListener('change', () => saveBudget({ cor_volume: Number(volInput.value) }));
+        const puInput = el('input', { type: 'number', step: 'any', value: m.cor_cost_pu_eur, style: 'width:110px' });
+        puInput.addEventListener('change', () => saveBudget({ cor_cost_pu_eur: Number(puInput.value) }));
+        const intInput = el('input', { type: 'number', step: 'any', value: m.interest_budget_eur, style: 'width:110px' });
+        intInput.addEventListener('change', () => saveBudget({ interest_budget_eur: Number(intInput.value) }));
+        tbody.appendChild(el('tr', {}, [
+          el('td', {}, labelInput), el('td', {}, volInput), el('td', {}, puInput),
+          el('td', { class: 'num', text: fmtEur(total) }), el('td', {}, intInput),
+        ]));
+      } else {
+        tbody.appendChild(el('tr', {}, [
+          el('td', { text: m.month_label }), el('td', { class: 'num', text: fmtNum(m.cor_volume) }),
+          el('td', { class: 'num', text: fmtEur(m.cor_cost_pu_eur) }), el('td', { class: 'num', text: fmtEur(total) }),
+          el('td', { class: 'num', text: fmtEur(m.interest_budget_eur) }),
+        ]));
+      }
+    });
+    table.appendChild(tbody);
+    panel.appendChild(table);
+    if (!editable) panel.appendChild(el('p', { class: 'muted', style: 'margin-top:10px', text: 'Budget is locked while this proposal is submitted or approved.' }));
+    return panel;
+  }
+
+  function downloadPdfButton() {
+    const btn = el('button', { class: 'btn secondary', type: 'button', text: '\u2b07 Download Proposal PDF' });
+    btn.addEventListener('click', async () => {
+      try {
+        const res = await fetch(`/api/proposals/${state.marketCode}/${state.quarterSlug}/pdf`, { headers: { 'X-Role': state.role, ...(state.region ? { 'X-Region': state.region } : {}) } });
+        if (!res.ok) throw new Error('Could not generate PDF');
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      } catch (e) { toast(e.message, true); }
+    });
+    return btn;
+  }
+
+  function statusPill(label, status) {
+    const cls = status === 'Requesting' ? 'status-pill rejected' : status === 'Within Budget' ? 'status-pill approved' : 'status-pill draft';
+    return el('div', {}, [
+      el('div', { style: 'font-size:10.5px;color:var(--text-faint);margin-bottom:6px;font-weight:600', text: label }),
+      el('span', { class: cls, text: status }),
+    ]);
+  }
+
+  function decisionPanel(onDecided) {
+    const panel = el('div', { class: 'decision-panel' });
+    panel.appendChild(el('div', { class: 'panel-title', text: 'Admin decision' }));
+    const feedback = el('textarea', { placeholder: 'Feedback for the region (required for reject / under review)\u2026' });
+    panel.appendChild(feedback);
+    const btnRow = el('div', { class: 'panel-row' });
+    const decide = async (decision) => {
+      if (decision !== 'approved' && !feedback.value.trim()) return toast('Add feedback explaining what needs to change', true);
+      try {
+        await api(`/proposals/${state.marketCode}/${state.quarterSlug}/decision`, { method: 'POST', body: JSON.stringify({ decision, feedback: feedback.value.trim() || null }) });
+        toast(`Marked as ${decision.replace('_', ' ')}`);
+        onDecided();
+      } catch (e) { toast(e.message, true); }
+    };
+    btnRow.appendChild(el('button', { class: 'btn success', type: 'button', text: '\u2713 Approve', onclick: () => decide('approved') }));
+    btnRow.appendChild(el('button', { class: 'btn warn', type: 'button', text: 'Send back for changes', onclick: () => decide('under_review') }));
+    btnRow.appendChild(el('button', { class: 'btn danger', style: 'padding:9px 16px;font-size:13.5px', type: 'button', text: 'Reject', onclick: () => decide('rejected') }));
+    panel.appendChild(btnRow);
+    return panel;
+  }
+
+  // ---------------- Admin: Proposal Tracker ----------------
+  async function renderAdmin(root) {
+    const proposals = await api('/admin/proposals');
+    if (!proposals.length) {
+      root.appendChild(el('div', { class: 'empty-state', text: 'No proposals yet.' }));
+      return;
+    }
+    proposals.forEach((q) => {
+      const card = el('div', { class: 'proposal-card' });
+      const info = el('div', { class: 'info' }, [
+        el('span', { class: 'market-line', text: `${regionDisplayName(q.region)} \u2014 ${q.quarter_label}` }),
+        el('span', { class: `status-pill ${q.status}`, text: q.status.replace('_', ' '), style: 'width:fit-content' }),
+      ]);
+      const figures = el('div', { class: 'figures' }, [
+        el('span', {}, [document.createTextNode('Programmes '), el('b', { text: q.programme_count })]),
+        el('span', {}, [document.createTextNode('CoR proposal '), el('b', { text: fmtEur(q.cor_proposal_eur) })]),
+        el('span', {}, [document.createTextNode('Variance '), el('b', { text: fmtEur(q.cor_variance_eur) })]),
+        el('span', {}, [document.createTextNode('Submitted '), el('b', { text: fmtDate(q.submitted_at) })]),
+      ]);
+      card.appendChild(info);
+      card.appendChild(figures);
+      const openBtn = el('button', { class: 'btn secondary small', type: 'button', text: 'Open' });
+      openBtn.addEventListener('click', async () => {
+        state.marketCode = q.region;
+        state.quarterSlug = q.quarter_slug;
+        state.view = 'signoff';
+        await loadCurrentProposal();
+        rerenderShell();
+      });
+      card.appendChild(openBtn);
+      if (q.status === 'submitted') {
+        const panel = decisionPanel(async () => {
+          state.marketCode = q.region;
+          state.quarterSlug = q.quarter_slug;
+          rerenderShell();
+        });
+        card.appendChild(panel);
+      }
+      root.appendChild(card);
+    });
+  }
+
+  boot();
+})();
+
+</script>
+</body>
+</html>
